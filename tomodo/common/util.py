@@ -198,8 +198,22 @@ def get_replica_set_summary(replica_set: ReplicaSet, name: str = "replica set") 
     return "\n".join(rows)
 
 
-def get_standalone_instance_summary(instance: Mongod, name: str = "standalone instance") -> str:
-    return ""
+def get_standalone_instance_summary(instance: Mongod, name: str = "Standalone") -> str:
+    headers = ["Name", "Port", "Type", "Hostname", "Container ID"]
+    rows = [
+        f"## {name} (standalone)",
+        "| " + " | ".join(headers) + " |",
+        "| " + "|".join(["------" for _ in range(len(headers))]) + " |",
+    ]
+    cells = [
+        name,
+        str(instance.port),
+        "mongod",
+        f"{instance.name}:{instance.port}",
+        instance.container_id or "N\A"
+    ]
+    rows.append("| " + "|".join(cells) + " |")
+    return "\n".join(rows)
 
 
 # def get_sharded_cluster_summary(cluster: ShardedCluster, name: str = "sharded cluster") -> str:

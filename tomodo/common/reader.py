@@ -1,11 +1,9 @@
 import io
 import logging
-
 from typing import List, Dict
 
 import docker
 from docker.models.containers import Container
-
 from rich.console import Console
 
 from tomodo.common.errors import EmptyDeployment, InvalidDeploymentType
@@ -54,7 +52,7 @@ def marshal_deployment(components: List[Dict]) -> Deployment:
     elif deployment_type == "sharded-cluster":
         return marshal_sharded_cluster(components)
     elif deployment_type == "standalone":
-        raise NotImplementedError
+        return marshal_standalone_instance(component=components[0])
     else:
         raise InvalidDeploymentType(deployment_type)
 
@@ -100,6 +98,21 @@ def marshal_replica_set(components: List[Dict]) -> ReplicaSet:
 def split_into_chunks(lst, y):
     chunk_size = len(lst) // y
     return [lst[i:i + chunk_size] for i in range(0, len(lst), chunk_size)]
+
+
+def marshal_standalone_instance(component: Dict) -> Mongod:
+    name = component.get("tomodo-group")
+    mongo_version = component.get("tomodo-mongo-version")
+    mongod = Mongod(
+        port=int(component.get("tomodo-port", 0)),
+        hostname=component.get("tomodo-name"),
+        name=component.get("tomodo-name"),
+        container_id=component.get("tomodo-container-id"),
+        host_data_dir=component.get("tomodo-data-dir")
+    )
+    mongod.mongo_version = mongo_version
+    mongod.last_known_state = RUNNING if component.get("tomodo-container-status") == "running" else STOPPED
+    return mongod
 
 
 def marshal_sharded_cluster(components: List[Dict]) -> ShardedCluster:

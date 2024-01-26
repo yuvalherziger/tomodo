@@ -17,7 +17,7 @@ class Mongod(Deployment):
     last_known_state: str
     host_data_dir: str = None
     container_data_dir: str = None
-    container_count = 0
+    container_count = 1
     deployment_type: str = "Standalone"
 
     def __init__(self,

@@ -39,18 +39,22 @@ class Provisioner:
 
     def provision(self) -> None:
         self.network = self.get_network()
+        deployment: Deployment = Deployment()
         if self.config.standalone:
-            self.provision_standalone_instance()
-            self.print_connection_details()
+            deployment: Mongod = Mongod(
+                name=self.config.name,
+                port=self.config.port,
+                hostname=f"mongodb://{self.config.name}:{self.config.port}"
+            )
+            deployment = self.provision_standalone_instance(mongod=deployment)
         elif self.config.replica_set:
-            replicaset = self.provision_replica_set(
-                replicaset=ReplicaSet(name=self.config.name, start_port=self.config.port, size=self.config.replicas))
-            self.print_deployment_summary(replicaset)
-            self.print_connection_details(replicaset)
+            deployment: ReplicaSet = ReplicaSet(name=self.config.name, start_port=self.config.port,
+                                                size=self.config.replicas)
+            deployment = self.provision_replica_set(replicaset=deployment)
         elif self.config.sharded:
-            sharded_cluster = self.provision_sharded_cluster()
-            self.print_deployment_summary(sharded_cluster)
-            self.print_connection_details(sharded_cluster)
+            deployment: ShardedCluster = self.provision_sharded_cluster()
+        self.print_deployment_summary(deployment=deployment)
+        self.print_connection_details(deployment=deployment)
 
     def print_deployment_summary(self, deployment: Deployment = None):
         summary_md = get_deployment_summary(deployment, self.config.name)
@@ -58,16 +62,17 @@ class Provisioner:
         console.print(markdown)
 
     def print_connection_details(self, deployment: Deployment = None):
-        hosts = ""
-        localhost_conn_string = ""
-        mapped_conn = ""
         auth = ""
         if self.config.is_auth_enabled:
             auth = f"{self.config.username}:********@"
+        hosts = ""
+        localhost_conn_string: str = f"mongodb://{auth}localhost:{self.config.port}"
+        mapped_conn = ""
+
         if isinstance(deployment, Mongod):
-            pass
+            mapped_conn: str = f"mongodb://{auth}{self.config.name}-1:{self.config.port}"
+            hosts = deployment.name
         elif isinstance(deployment, ReplicaSet):
-            localhost_conn_string: str = f"mongodb://{auth}localhost:{self.config.port}"
             mapped_conn: str = f"mongodb://{auth}{self.config.name}-1:{self.config.port}/?replicaSet={self.config.name}"
             hosts = ",".join([m.name for m in deployment.members])
         elif isinstance(deployment, ShardedCluster):
@@ -100,10 +105,6 @@ mongosh '{mapped_conn}'
 tomodo describe --name {self.config.name}
 ```""")
         console.print(markdown)
-
-    def provision_standalone_instance(self) -> None:
-        logger.info("This action will provision a standalone MongoDB instance")
-        pass
 
     def provision_sharded_cluster(self) -> ShardedCluster:
         logger.info("This action will provision a MongoDB sharded cluster with %d shards (%d replicas each)",
@@ -179,8 +180,8 @@ tomodo describe --name {self.config.name}
 
     def provision_replica_set(self, replicaset: ReplicaSet, config_svr: bool = False, sh_cluster: bool = False,
                               shard_id: int = 0) -> ReplicaSet:
-        if self.config.arbiter:
-            logger.info("An arbiter node will also be configured")
+        # if self.config.arbiter:
+        #     logger.info("An arbiter node will also be configured")
         start_port = replicaset.start_port
         ports = range(start_port, start_port + replicaset.size)
         members: List[Mongod] = []
@@ -215,6 +216,21 @@ tomodo describe --name {self.config.name}
         self.wait_for_mongod_readiness(mongod=replicaset.members[0])
         self.init_replica_set(replicaset)
         return replicaset
+
+    def provision_standalone_instance(self, mongod: Mongod) -> Mongod:
+        logger.info("This action will provision a standalone MongoDB instance")
+        if not is_port_range_available((mongod.port,)):
+            exit(1)
+        container, host_data_dir, container_data_dir = self.create_db_container(
+            port=mongod.port,
+            name=mongod.name
+        )
+        mongod.container_id = container.short_id
+        mongod.host_data_dir = host_data_dir
+        mongod.container_data_dir = container_data_dir
+        logger.info("MongoDB container created [id: %s]", mongod.container_id)
+        self.wait_for_mongod_readiness(mongod=mongod)
+        return mongod
 
     def init_replica_set(self, replicaset: ReplicaSet) -> None:
         init_scripts = ["rs.initiate()"]
@@ -285,10 +301,9 @@ tomodo describe --name {self.config.name}
         os.makedirs(data_dir_path, exist_ok=True)
         host_path = os.path.abspath(data_dir_path)
         container_path = f"/{data_dir_name}"
-        mounts = []
-        mounts.append(Mount(
+        mounts = [Mount(
             target=container_path, source=host_path, type="bind"
-        ))
+        )]
 
         repo = self.config.image_repo
         tag = self.config.image_tag
@@ -349,7 +364,7 @@ tomodo describe --name {self.config.name}
                 "tomodo-group": self.config.name,
                 "tomodo-port": str(port),
                 "tomodo-role": "cfg-svr" if config_svr else "rs-member" if replset_name else "standalone",
-                "tomodo-type": "sharded-cluster" if sh_cluster else "replica-set" if replset_name else "standalone",
+                "tomodo-type": "sharded-cluster" if sh_cluster else ("replica-set" if replset_name else "standalone"),
                 "tomodo-data-dir": host_path,
                 "tomodo-shard-id": str(shard_id),
                 "tomodo-shard-count": str(self.config.shards or 0),

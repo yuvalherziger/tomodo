@@ -21,7 +21,7 @@ from tomodo.common.util import AnonymizingFilter, is_docker_running
 
 console = Console()
 
-cli = typer.Typer()
+cli = typer.Typer(no_args_is_help=True)
 
 log_handler = RichHandler(show_path=False)
 log_handler.addFilter(AnonymizingFilter())
@@ -142,6 +142,9 @@ def provision(
 ):
     check_docker()
     name = name or get_random_name(combo=[ADJECTIVES, ANIMALS], separator="-", style="lowercase")
+    if sum([standalone, replica_set, sharded]) != 1:
+        logger.error("Exactly one of the following has to be specified: --standalone, --replica-set, or --sharded")
+        exit(1)
     config = ProvisionerConfig(
         standalone=standalone, replica_set=replica_set, replicas=replicas, shards=shards,
         arbiter=arbiter, name=name, priority=priority,
