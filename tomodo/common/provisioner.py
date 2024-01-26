@@ -1,0 +1,375 @@
+import base64
+import logging
+import os
+import platform
+import secrets
+from sys import exit
+from typing import List
+
+import docker
+import typer
+from docker import DockerClient
+from docker.errors import APIError
+from docker.models.containers import Container
+from docker.models.networks import Network
+from docker.types import EndpointConfig, Mount, NetworkingConfig
+
+from rich.console import Console
+from rich.markdown import Markdown
+
+from tomodo.common.config import ProvisionerConfig
+from tomodo.common.models import Mongod, ReplicaSet, ShardedCluster, Mongos, Shard, ConfigServer, Deployment
+from tomodo.common.util import (
+    is_port_range_available, append_to_hosts_file, with_retry, run_mongo_shell_command,
+    get_deployment_summary
+)
+
+DOCKER_ENDPOINT_CONFIG_VER = "1.43"
+
+console = Console()
+logger = logging.getLogger("rich")
+
+
+class Provisioner:
+    network: Network = None
+    config: ProvisionerConfig = None
+    docker_client: DockerClient = None
+
+    def __init__(self, config: ProvisionerConfig):
+        self.config = config
+        self.docker_client = docker.from_env()
+
+    def provision(self) -> None:
+        self.network = self.get_network()
+        if self.config.standalone:
+            self.provision_standalone_instance()
+            self.print_connection_details()
+        elif self.config.replica_set:
+            replicaset = self.provision_replica_set(
+                replicaset=ReplicaSet(name=self.config.name, start_port=self.config.port, size=self.config.replicas))
+            self.print_deployment_summary(replicaset)
+            self.print_connection_details(replicaset)
+        elif self.config.sharded:
+            sharded_cluster = self.provision_sharded_cluster()
+            self.print_deployment_summary(sharded_cluster)
+            self.print_connection_details(sharded_cluster)
+
+    def print_deployment_summary(self, deployment: Deployment = None):
+        summary_md = get_deployment_summary(deployment, self.config.name)
+        markdown = Markdown(summary_md)
+        console.print(markdown)
+
+    def print_connection_details(self, deployment: Deployment = None):
+        hosts = ""
+        localhost_conn_string = ""
+        mapped_conn = ""
+        auth = ""
+        if self.config.is_auth_enabled:
+            auth = f"{self.config.username}:********@"
+        if isinstance(deployment, Mongod):
+            pass
+        elif isinstance(deployment, ReplicaSet):
+            localhost_conn_string: str = f"mongodb://{auth}localhost:{self.config.port}"
+            mapped_conn: str = f"mongodb://{auth}{self.config.name}-1:{self.config.port}/?replicaSet={self.config.name}"
+            hosts = ",".join([m.name for m in deployment.members])
+        elif isinstance(deployment, ShardedCluster):
+            first_mongos = deployment.routers[0]
+            localhost_conn_string: str = f"mongodb://{auth}localhost:{first_mongos.port}"
+            mapped_conn: str = f"mongodb://{auth}{self.config.name}-mongos:{first_mongos.port}"
+            host_list = []
+            for m in deployment.config_svr_replicaset.members:
+                host_list.append(m.name)
+            for r in deployment.routers:
+                host_list.append(r.name)
+            for s in deployment.shards:
+                for m in s.members:
+                    host_list.append(m.name)
+            hosts = ",".join(host_list)
+        command = f"echo '127.0.0.1 {hosts}' | sudo tee -a /etc/hosts"
+        markdown = Markdown(f"""
+```bash
+# Connect to the deployment with mongosh using localhost:
+mongosh '{localhost_conn_string}'
+ 
+# Optionally, map the deployment hosts:
+{command}
+
+# Once you've mapped the hosts,
+# you'll be able to connect with mongosh this way:
+mongosh '{mapped_conn}'
+
+# Print the deployment details:
+tomodo describe --name {self.config.name}
+```""")
+        console.print(markdown)
+
+    def provision_standalone_instance(self) -> None:
+        logger.info("This action will provision a standalone MongoDB instance")
+        pass
+
+    def provision_sharded_cluster(self) -> ShardedCluster:
+        logger.info("This action will provision a MongoDB sharded cluster with %d shards (%d replicas each)",
+                    self.config.shards, self.config.replicas)
+        # (replicas x shards) + config server + mongos
+        num_ports = (self.config.shards * self.config.replicas) + self.config.config_servers + 1
+        ports = range(self.config.port, self.config.port + num_ports)
+        if not is_port_range_available(tuple(ports)):
+            exit(1)
+        sharded_cluster = ShardedCluster()
+        config_servers = []
+        for i in range(self.config.config_servers):
+            curr_name = f"{self.config.name}-cfg-svr-{i + 1}"
+            curr_port = self.config.port + i
+            config_svr = ConfigServer(
+                port=curr_port,
+                hostname=f"mongodb://{curr_name}:{curr_port}",
+                name=curr_name,
+                _type="mongod (config server)"
+            )
+            config_servers.append(config_svr)
+        config_svr_replicaset = ReplicaSet(
+            name=f"{self.config.name}-cfg-svr",
+            start_port=self.config.port,
+            members=config_servers,
+            size=self.config.config_servers
+        )
+        self.provision_replica_set(replicaset=config_svr_replicaset, config_svr=True, sh_cluster=True)
+
+        sharded_cluster.config_svr_replicaset = config_svr_replicaset
+        mongos_port = self.config.port + self.config.config_servers
+        mongos_container = self.create_mongos_container(
+            port=mongos_port,
+            name=f"{self.config.name}-mongos",
+            config_svr_replicaset=config_svr_replicaset
+        )
+
+        mongos = Mongos(
+            port=mongos_port,
+            hostname=f"mongodb://{self.config.name}-mongos:{mongos_port}",
+            name=f"{self.config.name}-mongos",
+            _type="mongos"
+        )
+        mongos.container_id = mongos_container.short_id
+
+        self.wait_for_mongod_readiness(mongod=mongos)
+        sharded_cluster.routers = [mongos]
+        sharded_cluster.shards = []
+        for s in range(self.config.shards):
+            shard_id = s + 1
+            sharded_cluster.shards.append(
+                Shard(
+                    shard_id=shard_id,
+                    name=f"{self.config.name}-sh-{shard_id}",
+                    start_port=mongos_port + (s * self.config.replicas) + 1,
+                    size=self.config.replicas
+                )
+            )
+        shard_init_commands = []
+        for s in sharded_cluster.shards:
+            self.provision_replica_set(replicaset=s, sh_cluster=True, shard_id=s.shard_id)
+            shard_host = f"{s.name}/"
+            shard_host += ",".join(f"{m.name}:{m.port}" for m in s.members)
+            shard_init_commands.append(
+                f"sh.addShard('{shard_host}')"
+            )
+        for cmd in shard_init_commands:
+            run_mongo_shell_command(mongo_cmd=cmd, mongod=mongos)
+        return sharded_cluster
+
+    def provision_shard(self, start_port: int) -> None:
+        pass
+
+    def provision_replica_set(self, replicaset: ReplicaSet, config_svr: bool = False, sh_cluster: bool = False,
+                              shard_id: int = 0) -> ReplicaSet:
+        if self.config.arbiter:
+            logger.info("An arbiter node will also be configured")
+        start_port = replicaset.start_port
+        ports = range(start_port, start_port + replicaset.size)
+        members: List[Mongod] = []
+        for port in ports:
+            idx = port - start_port + 1
+            members.append(
+                Mongod(
+                    port=port,
+                    hostname=f"mongodb://{replicaset.name}-{idx}:{port}",
+                    name=f"{replicaset.name}-{idx}",
+                )
+            )
+
+        replicaset.members = members
+        if not is_port_range_available(tuple(ports)):
+            exit(1)
+        password = None
+        if self.config.append_to_hosts:
+            password = typer.prompt("Enter your password", hide_input=True)
+        # Provision nodes:
+        for member in replicaset.members:
+            container, host_data_dir, container_data_dir = self.create_db_container(
+                port=member.port,
+                name=member.name,
+                replset_name=replicaset.name,
+                config_svr=config_svr,
+                sh_cluster=sh_cluster,
+                shard_id=shard_id
+            )
+            member.container_id = container.short_id
+            member.host_data_dir = host_data_dir
+            member.container_data_dir = container_data_dir
+            logger.info("MongoDB container created [id: %s]", member.container_id)
+            if self.config.append_to_hosts:
+                append_to_hosts_file(ip="127.0.0.1", host=member.name, password=password)
+
+        self.wait_for_mongod_readiness(mongod=replicaset.members[0])
+        self.init_replica_set(replicaset)
+        return replicaset
+
+    def init_replica_set(self, replicaset: ReplicaSet) -> None:
+        init_scripts = ["rs.initiate()"]
+        for m in replicaset.members[1:len(replicaset.members)]:
+            self.wait_for_mongod_readiness(mongod=m)
+            init_scripts.append(f"rs.add('{m.name}:{m.port}')")
+        first_mongod = replicaset.members[0]
+        for script in init_scripts:
+            run_mongo_shell_command(mongo_cmd=script, mongod=first_mongod, config=self.config)
+
+    @with_retry(max_attempts=10, delay=5, retryable_exc=(APIError, Exception))
+    def wait_for_mongod_readiness(self, mongod: Mongod):
+        logger.info("Checking the readiness of %s", mongod.name)
+        mongo_cmd = "db.runCommand({ping: 1}).ok"
+        exit_code, output, _ = run_mongo_shell_command(mongo_cmd=mongo_cmd, mongod=mongod)
+
+        try:
+            is_ready = int(output) == 1
+        except:
+            is_ready = False
+        if not is_ready:
+            logger.info("Server %s is not ready to accept connections", mongod.name)
+            raise Exception("Server isn't ready")
+        logger.info("Server %s is ready to accept connections", mongod.name)
+
+    def create_mongos_container(self, port: int, name: str, config_svr_replicaset: ReplicaSet):
+        repo = self.config.image_repo
+        tag = self.config.image_tag
+        image = f"{repo}:{tag}"
+        logger.info("Creating container from '%s'. Port %d will be exposed to your host", image, port)
+        command = [
+            "mongos",
+            "--bind_ip_all",
+            "--port", str(port),
+            "--configdb", config_svr_replicaset.config_db
+        ]
+        networking_config = NetworkingConfig(
+            endpoints_config={
+                self.network.name: EndpointConfig(version="1.43", aliases=[name])
+            }
+        )
+        return self.docker_client.containers.run(
+            f"{repo}:{tag}",
+            detach=True,
+            ports={f"{port}/tcp": port},
+            platform=f"linux/{platform.machine()}",
+            network=self.network.id,
+            # user=1000,
+            hostname=name,
+            name=name,
+            command=command,
+            networking_config=networking_config,
+            labels={
+                "source": "tomodo",
+                "tomodo-name": name,
+                "tomodo-group": self.config.name,
+                "tomodo-port": str(port),
+                "tomodo-role": "mongos",
+                "tomodo-type": "sharded-cluster",
+                "tomodo-shard-count": str(self.config.shards or 0),
+            }
+        )
+
+    def create_db_container(self, port: int, name: str, replset_name: str = None,
+                            config_svr: bool = False, sh_cluster: bool = False, shard_id: int = 0) -> Container:
+        data_dir_name = f"data/{name}-db"
+        data_dir_path = os.path.join("/tmp/tomodo", data_dir_name)
+        os.makedirs(data_dir_path, exist_ok=True)
+        host_path = os.path.abspath(data_dir_path)
+        container_path = f"/{data_dir_name}"
+        mounts = []
+        mounts.append(Mount(
+            target=container_path, source=host_path, type="bind"
+        ))
+
+        repo = self.config.image_repo
+        tag = self.config.image_tag
+        image = f"{repo}:{tag}"
+        logger.info("Creating container from '%s'. Port %d will be exposed to your host", image, port)
+        command = [
+            "mongod",
+            "--bind_ip_all",
+            "--port", str(port),
+            "--dbpath", container_path,
+            "--logpath", f"{container_path}/mongod.log"
+        ]
+        environment = []
+        if self.config.username and self.config.password:
+            keyfile_path = os.path.abspath("/tmp/tomodo/mongo_keyfile")
+            environment = [f"MONGO_INITDB_ROOT_USERNAME={self.config.username}",
+                           f"MONGO_INITDB_ROOT_PASSWORD={self.config.password}"]
+
+            if not os.path.isfile(keyfile_path):
+                random_bytes = secrets.token_bytes(756)
+                base64_bytes = base64.b64encode(random_bytes)
+                with open(keyfile_path, "wb") as file:
+                    file.write(base64_bytes)
+                os.chmod(keyfile_path, 0o400)
+            mounts.append(
+                Mount(target="/etc/mongo/mongo_keyfile", source=keyfile_path, type="bind")
+            )
+            command.extend(["--keyFile", "/etc/mongo/mongo_keyfile"])
+
+        if config_svr:
+            command.extend(["--configsvr", "--replSet", replset_name])
+        elif self.config.replica_set:
+            command.extend(["--replSet", replset_name])
+        elif self.config.sharded:
+            command.extend(["--shardsvr", "--replSet", replset_name])
+        networking_config = NetworkingConfig(
+            endpoints_config={
+                self.network.name: EndpointConfig(version=DOCKER_ENDPOINT_CONFIG_VER, aliases=[name])
+            }
+        )
+
+        return self.docker_client.containers.run(
+            f"{repo}:{tag}",
+            detach=True,
+            ports={f"{port}/tcp": port},
+            platform=f"linux/{platform.machine()}",
+            network=self.network.id,
+            # user=1000,
+            hostname=name,
+            name=name,
+            command=command,
+            mounts=mounts,
+            networking_config=networking_config,
+            environment=environment,
+            labels={
+                "source": "tomodo",
+                "tomodo-name": name,
+                "tomodo-group": self.config.name,
+                "tomodo-port": str(port),
+                "tomodo-role": "cfg-svr" if config_svr else "rs-member" if replset_name else "standalone",
+                "tomodo-type": "sharded-cluster" if sh_cluster else "replica-set" if replset_name else "standalone",
+                "tomodo-data-dir": host_path,
+                "tomodo-shard-id": str(shard_id),
+                "tomodo-shard-count": str(self.config.shards or 0),
+            }
+        ), host_path, container_path
+
+    def get_network(self) -> Network:
+        networks = self.docker_client.networks.list(filters={"name": self.config.network_name})
+        if len(networks) > 0:
+            network = networks[0]
+            logger.info("At least one Docker network exists with the name '%s'. Picking the first one [id: %s]",
+                        network.name, network.short_id)
+        else:
+            network = self.docker_client.networks.create(name=self.config.network_name)
+            logger.info("Docker network '%s' was created [id: %s]", self.config.network_name, network.short_id)
+        return network

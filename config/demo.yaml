@@ -1,0 +1,20 @@
+target_version: "4.4.13"
+hostname: mongodb://mongodb-rs-1:27011/?replicaSet=mongodbrs
+standalone: false
+image_registry_name: slow-starting-mongo
+container_name: mongodb-rs-1
+container_creation_retries: 50
+container_creation_delay: 2
+mongodb_operation_retries: 50
+mongodb_operation_delay: 5
+image_tag_mapping:
+  "3.6.23": "3.6.23"
+  "4.0": "4.0"
+  "4.2": "4.2"
+  "4.4.13": "4.4.13"
+  "5.0": "5.0"
+  "6.0": "6.0"
+  "7.0": "7.0"
+lagging_fcv: false
+log_file_path: ./tomodo.log
+log_level: INFO
