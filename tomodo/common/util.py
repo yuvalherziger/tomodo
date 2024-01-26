@@ -1,13 +1,12 @@
 import functools
-import io
 import inspect
+import io
 import logging
-import os
 import re
 import socket
 import time
 from sys import exit
-from typing import Tuple, Type, Dict, Union, List
+from typing import Tuple, Type, Dict, Union
 
 import docker
 from docker.errors import APIError, DockerException
@@ -105,33 +104,6 @@ def is_port_range_available(port_range: Tuple[int, ...], host: str = "localhost"
     return True
 
 
-def append_to_hosts_file(ip: str, host: str, password: str):
-    os.environ["HISTIGNORE"] = "*sudo -S*"
-    entry = f"{ip} {host}"
-    logger.info("You'll need to enter your superuser password in order to configure host mapping")
-    command = f"sudo -S echo '{entry}' | sudo -S tee -a /etc/hosts > /dev/null"
-    os.system(f"echo {password} | {command}")
-
-
-#
-# def is_host_mapped_to_ip(ip: str, host: str):
-#     try:
-#         _ = subprocess.check_output(
-#             ["echo", password, "|", "sudo", "grep", f"127.0.0.1 {host}", "/etc/hosts"]
-#         )
-#         return True
-#     except subprocess.CalledProcessError:
-#         return False
-# #
-#
-# # Usage
-# hostname = 'example.com'
-# if check_hostname(hostname):
-#     print(f'{hostname} is mapped to 127.0.0.1')
-# else:
-#     print(f'{hostname} is not mapped to 127.0.0.1')
-#
-
 class AnonymizingFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         try:
@@ -207,27 +179,6 @@ def get_deployment_summary(deployment: Deployment, name: str) -> str:
         return get_standalone_instance_summary(deployment, name)
 
 
-# def get_replica_set_summary(replica_set: ReplicaSet, name: str = "replica set") -> str:
-#     io.truncate(0)
-#     console.file.truncate(0)
-#     table = Table(title=f"Summary of '{name}' replica set")
-#     table.add_column("Name")
-#     table.add_column("Port")
-#     table.add_column("Type")
-#     table.add_column("Hostname")
-#     table.add_column("ContainerId")
-#     for member in replica_set.members:
-#         table.add_row(
-#             member.name,
-#             str(member.port),
-#             member.type,
-#             member.hostname,
-#             member.container_id or "N\A"
-#         )
-#     console.print(table)
-#     output = console.file.getvalue()
-#     return output
-
 def get_replica_set_summary(replica_set: ReplicaSet, name: str = "replica set") -> str:
     headers = ["Name", "Port", "Type", "Hostname", "Container ID"]
     rows = [
@@ -240,7 +191,7 @@ def get_replica_set_summary(replica_set: ReplicaSet, name: str = "replica set") 
             member.name,
             str(member.port),
             member.type,
-            f"{member.hostname}:{member.port}",
+            f"{member.name}:{member.port}",
             member.container_id or "N\A"
         ]
         rows.append("| " + "|".join(cells) + " |")
@@ -302,7 +253,7 @@ def get_sharded_cluster_summary(cluster: ShardedCluster, name: str = "sharded cl
             config_server.name,
             str(config_server.port),
             "Config DB replica",
-            f"{config_server.hostname}:{config_server.port}",
+            f"{config_server.name}:{config_server.port}",
             config_server.container_id or "N/A",
         ]
         rows.append("| " + "|".join(cells) + " |")
@@ -311,7 +262,7 @@ def get_sharded_cluster_summary(cluster: ShardedCluster, name: str = "sharded cl
             router.name,
             str(router.port),
             "Router (mongos)",
-            f"{router.hostname}:{router.port}",
+            f"{router.name}:{router.port}",
             router.container_id or "N/A",
         ]
         rows.append("| " + "|".join(cells) + " |")
@@ -322,7 +273,7 @@ def get_sharded_cluster_summary(cluster: ShardedCluster, name: str = "sharded cl
                 member.name,
                 str(member.port),
                 "Shard replica",
-                f"{member.hostname}:{member.port}",
+                f"{member.name}:{member.port}",
                 member.container_id or "N/A",
             ]
             rows.append("| " + "|".join(cells) + " |")

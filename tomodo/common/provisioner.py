@@ -7,20 +7,18 @@ from sys import exit
 from typing import List
 
 import docker
-import typer
 from docker import DockerClient
 from docker.errors import APIError
 from docker.models.containers import Container
 from docker.models.networks import Network
 from docker.types import EndpointConfig, Mount, NetworkingConfig
-
 from rich.console import Console
 from rich.markdown import Markdown
 
 from tomodo.common.config import ProvisionerConfig
 from tomodo.common.models import Mongod, ReplicaSet, ShardedCluster, Mongos, Shard, ConfigServer, Deployment
 from tomodo.common.util import (
-    is_port_range_available, append_to_hosts_file, with_retry, run_mongo_shell_command,
+    is_port_range_available, with_retry, run_mongo_shell_command,
     get_deployment_summary
 )
 
@@ -199,9 +197,6 @@ tomodo describe --name {self.config.name}
         replicaset.members = members
         if not is_port_range_available(tuple(ports)):
             exit(1)
-        password = None
-        if self.config.append_to_hosts:
-            password = typer.prompt("Enter your password", hide_input=True)
         # Provision nodes:
         for member in replicaset.members:
             container, host_data_dir, container_data_dir = self.create_db_container(
@@ -216,8 +211,6 @@ tomodo describe --name {self.config.name}
             member.host_data_dir = host_data_dir
             member.container_data_dir = container_data_dir
             logger.info("MongoDB container created [id: %s]", member.container_id)
-            if self.config.append_to_hosts:
-                append_to_hosts_file(ip="127.0.0.1", host=member.name, password=password)
 
         self.wait_for_mongod_readiness(mongod=replicaset.members[0])
         self.init_replica_set(replicaset)

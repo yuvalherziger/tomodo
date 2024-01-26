@@ -39,8 +39,7 @@ You can install the dependencies with pip using the following command:
 pip install .
 ```
 
-After installing the dependencies with pip, you can validate the installtion by invoking the help page for the `upgrade`
-command:
+After installing the dependencies with pip, you can validate the installation by invoking the help page:
 
 ```bash
 python tomodo/cmd.py --help

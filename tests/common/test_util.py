@@ -8,8 +8,8 @@ class TestUtil:
     @staticmethod
     @pytest.mark.parametrize("_str, delimiter_1, delimiter_2, expected",
                              [
-                                 ("1=a,2=b,3=c", ",", "=",  {"1": "a", "2": "b", "3": "c"}),
-                                 ("1 = a,2 = b", ",", "=",  {"1": "a", "2": "b"}),
+                                 ("1=a,2=b,3=c", ",", "=", {"1": "a", "2": "b", "3": "c"}),
+                                 ("1 = a,2 = b", ",", "=", {"1": "a", "2": "b"}),
                              ])
     def test_parse_2d_separated_string(_str, delimiter_1, delimiter_2, expected):
         actual = parse_2d_separated_string(_str, delimiter_1, delimiter_2)
