@@ -11,11 +11,34 @@ and sharded clusters.
 
 ## Installation
 
+### Install with Homebrew
+
+[Homebrew](https://brew.sh/) is a popular package manager for MacOS.  You can install tomodo by
+running the following commands:
+
+```shell
+brew tap yuviherziger/homebrew-tomodo
+brew install tomodo
+```
+
+After installing the tool with `brew`, you can run it the following way:
+
+```bash
+tomodo --help
+```
+
+### Install with Python
+
+If you wish to set up a development environment, or if you simply can't use Homebrew or aren't a MacOS user,
+you can install tomodo using Python. The recommended way to perform the Python installation is by using the
+[Poetry](https://python-poetry.org/) Python package manager.  However, it's also possible to install tomodo and
+its dependencies with `pip` (see [here](#install-with-pip)).
+
 **Requirements:**
 
 * Python 3.8 or higher
 
-### Install with Poetry (Recommended)
+#### Install with Poetry Package Manager for Python
 
 If you have the [Poetry](https://python-poetry.org/) Python package manager installed locally, you can install
 the CLI the following way:

@@ -14,7 +14,6 @@ keywords = ["mongodb", "docker", "upgrade", "python", "cli"]
 python = ">=3.8,<3.13"
 docker = "^7.0.0"
 typer = { extras = ["all"], version = "^0.9.0" }
-pymongo = "^4.4.1"
 ruamel-yaml = "^0.17.32"
 unique-names-generator = "^1.0.2"
 
