@@ -216,45 +216,6 @@ def get_standalone_instance_summary(instance: Mongod, name: str = "Standalone") 
     return "\n".join(rows)
 
 
-# def get_sharded_cluster_summary(cluster: ShardedCluster, name: str = "sharded cluster") -> str:
-#     io.truncate(0)
-#     console.file.truncate(0)
-#     table = Table(title=f"Summary of '{name}' sharded cluster")
-#     table.add_column("Name")
-#     table.add_column("Port")
-#     table.add_column("Type")
-#     table.add_column("Hostname")
-#     table.add_column("ContainerId")
-#     for config_server in cluster.config_svr_replicaset.members:
-#         table.add_row(
-#             config_server.name,
-#             str(config_server.port),
-#             "Config DB replica",
-#             config_server.hostname,
-#             config_server.container_id or "N/A",
-#         )
-#     for router in cluster.routers:
-#         table.add_row(
-#             router.name,
-#             str(router.port),
-#             "Router (mongos)",
-#             router.hostname,
-#             router.container_id or "N/A",
-#         )
-#
-#     for shard in cluster.shards:
-#         for member in shard.members:
-#             table.add_row(
-#                 member.name,
-#                 str(member.port),
-#                 "Shard replica",
-#                 member.hostname,
-#                 member.container_id or "N/A",
-#             )
-#     console.print(table)
-#     output = console.file.getvalue()
-#     return output
-
 def get_sharded_cluster_summary(cluster: ShardedCluster, name: str = "sharded cluster") -> str:
     headers = ["Name", "Port", "Type", "Hostname", "Container ID"]
     rows = [
@@ -266,7 +227,7 @@ def get_sharded_cluster_summary(cluster: ShardedCluster, name: str = "sharded cl
         cells = [
             config_server.name,
             str(config_server.port),
-            "Config DB replica",
+            "mongod (config)",
             f"{config_server.name}:{config_server.port}",
             config_server.container_id or "N/A",
         ]
@@ -275,7 +236,7 @@ def get_sharded_cluster_summary(cluster: ShardedCluster, name: str = "sharded cl
         cells = [
             router.name,
             str(router.port),
-            "Router (mongos)",
+            "mongos",
             f"{router.name}:{router.port}",
             router.container_id or "N/A",
         ]
@@ -286,7 +247,7 @@ def get_sharded_cluster_summary(cluster: ShardedCluster, name: str = "sharded cl
             cells = [
                 member.name,
                 str(member.port),
-                "Shard replica",
+                "mongod",
                 f"{member.name}:{member.port}",
                 member.container_id or "N/A",
             ]
