@@ -37,7 +37,8 @@ class Cleaner:
                 logger.info("Stopping config server replica set member in container %s", member.container_id)
                 self._stop_container(member.container_id)
         if isinstance(deployment, Mongod):
-            pass
+            logger.info("Stopping standalone instance in container %s", deployment.container_id)
+            self._stop_container(deployment.container_id)
 
     def stop_all_deployments(self) -> None:
         deployments: Dict[str, Deployment] = self.reader.get_all_deployments(include_stopped=False)
@@ -72,7 +73,8 @@ class Cleaner:
                 logger.info("Deleting config server replica set member in container %s", member.container_id)
                 self._delete_container(member.container_id, member.host_data_dir)
         if isinstance(deployment, Mongod):
-            pass
+            logger.info("Deleting standalone instance in container %s", deployment.container_id)
+            self._delete_container(deployment.container_id, deployment.host_data_dir)
 
     def _stop_container(self, container_id: str) -> None:
         container = self.docker_client.containers.get(container_id)
