@@ -1,0 +1,82 @@
+name: Build and Update Formula
+on:
+  release:
+    types: [ created ]
+jobs:
+  build:
+    runs-on: macos-latest
+    environment: release
+    permissions:
+      id-token: write
+    strategy:
+      matrix:
+        python-version: [ 3.8 ]
+        poetry-version: [ 1.5.1 ]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up Git
+        run: |
+          git config --global user.name 'tomodo publisher'
+          git config --global user.email 'tomodo.publisher@gmail.com'
+
+      - name: Run image
+        uses: abatilo/actions-poetry@v2.3.0
+        with:
+          poetry-version: ${{ matrix.poetry-version }}
+
+      - name: Install dependencies
+        run: poetry install
+
+      - name: Build package
+        run: poetry run build
+
+      - name: Create Custom Tarball
+        run: |
+          VERSION=${{ github.ref_name }}
+          DIR_TO_PACKAGE="dist/tomodo"
+          TAR_NAME="tomodo-$VERSION.tar.gz"
+          tar -czvf dist/$TAR_NAME -C ${DIR_TO_PACKAGE} .
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: release-tarball
+          path: dist/*.tar.gz
+
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.TAP_PAT }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./dist/tomodo-${{ github.ref_name }}.tar.gz
+          asset_name: tomodo-${{ github.ref_name }}.tar.gz
+          asset_content_type: application/gzip
+
+#      - name: Update Homebrew formula
+#        env:
+#          TAP_REPO: yuviherziger/homebrew-tomodo
+#          FORMULA_NAME: tomodo
+#          PAT: ${{ secrets.TAP_PAT }}
+#        run: |
+#          # Clone tap repository
+#          RELEASE_ARTIFACT_URL=https://github.com/yuviherziger/tomodo/releases/download/${{ github.ref_name }}/tomodo-${{ github.ref_name }}.tar.gz
+#          git clone https://github.com/${TAP_REPO}.git
+#          cd homebrew-tomodo
+#
+#          # Compute SHA256 checksum
+#          SHA256=$(curl -Ls "${RELEASE_ARTIFACT_URL}" | shasum -a 256 | cut -d ' ' -f1)
+#
+#          # Update formula file
+#          sed -i '' "s|url .*|url \"${RELEASE_ARTIFACT_URL}\"|" Formula/${FORMULA_NAME}.rb
+#          sed -i '' "s|sha256 .*|sha256 \"${SHA256}\"|" Formula/${FORMULA_NAME}.rb
+#
+#          # Commit and push changes
+#          git add Formula/${FORMULA_NAME}.rb
+#          git commit -m "Update ${FORMULA_NAME} formula for release tomodo-${{ github.ref_name }}"
+#          git push https://${PAT}@github.com/${TAP_REPO}.git
