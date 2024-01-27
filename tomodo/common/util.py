@@ -14,6 +14,7 @@ from docker.models.containers import Container
 from rich.console import Console
 
 from tomodo.common.config import ProvisionerConfig
+from tomodo.common.errors import InvalidShellException
 from tomodo.common.models import Mongod, ShardedCluster, Deployment, ReplicaSet
 
 io = io.StringIO()
@@ -137,7 +138,7 @@ def run_mongo_shell_command(mongo_cmd: str, mongod: Mongod, shell: str = "mongos
         if shell_check_exit_code != 0:
             logger.error("The '%s' shell could not be found in the container.", shell)
             # No valid shell --> error out:
-            exit(1)
+            raise InvalidShellException
     # If the output needs to be JSON-serialized by the tool, it's required to stringify it with mongosh:
     if shell == "mongosh" and serialize_json:
         mongo_cmd = f"JSON.stringify({mongo_cmd})"

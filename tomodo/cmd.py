@@ -7,8 +7,6 @@ import typer
 from rich.console import Console
 from rich.logging import RichHandler
 from rich.markdown import Markdown
-from unique_names_generator import get_random_name
-from unique_names_generator.data import ADJECTIVES, ANIMALS
 
 from tomodo.common import TOMODO_VERSION
 from tomodo.common.cleaner import Cleaner
@@ -141,10 +139,6 @@ def provision(
         )
 ):
     check_docker()
-    name = name or get_random_name(combo=[ADJECTIVES, ANIMALS], separator="-", style="lowercase")
-    if sum([standalone, replica_set, sharded]) != 1:
-        logger.error("Exactly one of the following has to be specified: --standalone, --replica-set, or --sharded")
-        exit(1)
     config = ProvisionerConfig(
         standalone=standalone, replica_set=replica_set, replicas=replicas, shards=shards,
         arbiter=arbiter, name=name, priority=priority,
@@ -154,7 +148,11 @@ def provision(
         network_name=network_name
     )
     provisioner = Provisioner(config=config)
-    provisioner.provision()
+    try:
+        provisioner.provision()
+    except Exception as e:
+        logger.exception("Could not provision your deployment - an error has occurred")
+        exit(1)
 
 
 @cli.command(
@@ -179,10 +177,17 @@ def describe(
             console.print(markdown)
         except EmptyDeployment:
             logger.error("A deployment named '%s' doesn't exist", name)
+        except Exception as e:
+            logger.exception("Could not describe your deployment - an error has occurred")
+            exit(1)
     else:
-        for description in reader.describe_all(include_stopped=exclude_stopped):
-            markdown = Markdown(description)
-            console.print(markdown)
+        try:
+            for description in reader.describe_all(include_stopped=exclude_stopped):
+                markdown = Markdown(description)
+                console.print(markdown)
+        except Exception as e:
+            logger.exception("Could not describe your deployments - an error has occurred")
+            exit(1)
 
 
 @cli.command(
@@ -209,16 +214,27 @@ def stop(
                     cleaner.stop_deployment(name)
                 else:
                     raise typer.Abort()
+        except typer.Abort:
+            pass
         except EmptyDeployment:
             logger.error("A deployment named '%s' doesn't exist", name)
+        except Exception as e:
+            logger.exception("Could not stop your deployment - an error has occurred")
+            exit(1)
     else:
-        if auto_confirm is True:
-            cleaner.stop_all_deployments()
-        else:
-            if typer.confirm(f"Stop all deployments?"):
+        try:
+            if auto_confirm is True:
                 cleaner.stop_all_deployments()
             else:
-                raise typer.Abort()
+                if typer.confirm(f"Stop all deployments?"):
+                    cleaner.stop_all_deployments()
+                else:
+                    raise typer.Abort()
+        except typer.Abort:
+            pass
+        except Exception as e:
+            logger.exception("Could not stop your deployments - an error has occurred")
+            exit(1)
 
 
 @cli.command(
@@ -264,17 +280,27 @@ def remove(
                     cleaner.delete_deployment(name)
                 else:
                     raise typer.Abort()
+        except typer.Abort:
+            pass
         except EmptyDeployment:
             logger.error("A deployment named '%s' doesn't exist", name)
+        except Exception as e:
+            logger.exception("Could not remove your deployment - an error has occurred")
+            exit(1)
     else:
-        if auto_confirm is True:
-            cleaner.delete_all_deployments()
-        else:
-            if typer.confirm(f"Delete all deployments?"):
+        try:
+            if auto_confirm is True:
                 cleaner.delete_all_deployments()
             else:
-                raise typer.Abort()
-
+                if typer.confirm(f"Delete all deployments?"):
+                    cleaner.delete_all_deployments()
+                else:
+                    raise typer.Abort()
+        except typer.Abort:
+            pass
+        except Exception as e:
+            logger.exception("Could not remove your deployments - an error has occurred")
+            exit(1)
 
 @cli.command(
     help="List deployments",
@@ -288,8 +314,12 @@ def list_(
 ):
     check_docker()
     reader = Reader()
-    markdown = Markdown(reader.list_all())
-    console.print(markdown)
+    try:
+        markdown = Markdown(reader.list_all(include_stopped=not exclude_stopped))
+        console.print(markdown)
+    except Exception as e:
+        logger.exception("Could not list your deployments - an error has occurred")
+        exit(1)
 
 
 def run():
