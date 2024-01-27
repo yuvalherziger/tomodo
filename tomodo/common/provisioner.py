@@ -16,6 +16,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 
 from tomodo.common.config import ProvisionerConfig
+from tomodo.common.errors import InvalidConfiguration, PortsTakenException
 from tomodo.common.models import Mongod, ReplicaSet, ShardedCluster, Mongos, Shard, ConfigServer, Deployment
 from tomodo.common.util import (
     is_port_range_available, with_retry, run_mongo_shell_command,
@@ -38,6 +39,9 @@ class Provisioner:
         self.docker_client = docker.from_env()
 
     def provision(self) -> None:
+        if sum([self.config.standalone, self.config.replica_set, self.config.sharded]) != 1:
+            logger.error("Exactly one of the following has to be specified: standalone, replica-set, or sharded")
+            raise InvalidConfiguration
         self.network = self.get_network()
         deployment: Deployment = Deployment()
         if self.config.standalone:
@@ -113,7 +117,7 @@ tomodo describe --name {self.config.name}
         num_ports = (self.config.shards * self.config.replicas) + self.config.config_servers + 1
         ports = range(self.config.port, self.config.port + num_ports)
         if not is_port_range_available(tuple(ports)):
-            exit(1)
+            raise PortsTakenException
         sharded_cluster = ShardedCluster()
         config_servers = []
         for i in range(self.config.config_servers):
@@ -197,7 +201,7 @@ tomodo describe --name {self.config.name}
 
         replicaset.members = members
         if not is_port_range_available(tuple(ports)):
-            exit(1)
+            raise PortsTakenException
         # Provision nodes:
         for member in replicaset.members:
             container, host_data_dir, container_data_dir = self.create_db_container(
@@ -220,7 +224,7 @@ tomodo describe --name {self.config.name}
     def provision_standalone_instance(self, mongod: Mongod) -> Mongod:
         logger.info("This action will provision a standalone MongoDB instance")
         if not is_port_range_available((mongod.port,)):
-            exit(1)
+            raise PortsTakenException
         container, host_data_dir, container_data_dir = self.create_db_container(
             port=mongod.port,
             name=mongod.name
