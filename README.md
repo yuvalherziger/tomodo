@@ -118,55 +118,37 @@ Take a look at the `provision` command's help page to read the full set of optio
 with `tomodo provision --help`:
 
 ```
-
  Usage: tomodo provision [OPTIONS]
 
  Provision a MongoDB deployment
 
-╭─ Options ──────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ --standalone        --no-standalone                                  Provision a MongoDB standalone instance           │
-│                                                                      [default: no-standalone]                          │
-│ --replica-set       --no-replica-set                                 Provision a MongoDB replica set                   │
-│                                                                      [default: no-replica-set]                         │
-│ --sharded           --no-sharded                                     Provision a MongoDB sharded cluster               │
-│                                                                      [default: no-sharded]                             │
-│ --replicas                              INTEGER                      The number of replica set nodes to provision      │
-│                                                                      [default: 3]                                      │
-│ --shards                                INTEGER                      The number of shards to provision in a sharded    │
-│                                                                      cluster                                           │
-│                                                                      [default: 2]                                      │
-│ --arbiter           --no-arbiter                                     Arbiter node (currently ignored)                  │
-│                                                                      [default: no-arbiter]                             │
-│ --name                                  TEXT                         The deployment's name; auto-generated if not      │
-│                                                                      provided                                          │
-│                                                                      [default: None]                                   │
-│ --priority          --no-priority                                    Priority (currently ignored)                      │
-│                                                                      [default: no-priority]                            │
-│ --port                                  INTEGER RANGE [0<=x<=65535]  The deployment's start port [default: 27017]      │
-│ --config-servers                        INTEGER                      The number of config server replica set nodes     │
-│                                                                      [default: 1]                                      │
-│ --mongos                                INTEGER                      The number of mongos routers (currently ignored)  │
-│                                                                      [default: 1]                                      │
-│ --auth              --no-auth                                        Whether to enable authentication (currently       │
-│                                                                      ignored)                                          │
-│                                                                      [default: no-auth]                                │
-│ --username                              TEXT                         Optional authentication username [default: None]  │
-│ --password                              TEXT                         Optional authentication password [default: None]  │
-│ --auth-db                               TEXT                         Authorization DB (currently ignored)              │
-│                                                                      [default: None]                                   │
-│ --auth-roles                            TEXT                         Default authentication roles (currently ignored)  │
-│                                                                      [default: dbAdminAnyDatabase readWriteAnyDatabase │
-│                                                                      userAdminAnyDatabase clusterAdmin]                │
-│ --image-repo                            TEXT                         [default: mongo]                                  │
-│ --image-tag                             TEXT                         The MongoDB image tag, which determines the       │
-│                                                                      MongoDB version to install                        │
-│                                                                      [default: latest]                                 │
-│ --network-name                          TEXT                         The Docker network to provision the deployment    │
-│                                                                      in; will create a new one or use an existing one  │
-│                                                                      with the same name if such network exists         │
-│                                                                      [default: mongo_network]                          │
-│ --help                                                               Show this message and exit.                       │
-╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ --standalone        --no-standalone                                  Provision a MongoDB standalone instance [default: no-standalone]                    │
+│ --replica-set       --no-replica-set                                 Provision a MongoDB replica set [default: no-replica-set]                           │
+│ --sharded           --no-sharded                                     Provision a MongoDB sharded cluster [default: no-sharded]                           │
+│ --replicas                              INTEGER                      The number of replica set nodes to provision [default: 3]                           │
+│ --shards                                INTEGER                      The number of shards to provision in a sharded cluster [default: 2]                 │
+│ --arbiter           --no-arbiter                                     Arbiter node (currently ignored) [default: no-arbiter]                              │
+│ --name                                  TEXT                         The deployment's name; auto-generated if not provided [default: None]               │
+│ --priority          --no-priority                                    Priority (currently ignored) [default: no-priority]                                 │
+│ --port                                  INTEGER RANGE [0<=x<=65535]  The deployment's start port [default: 27017]                                        │
+│ --config-servers                        INTEGER                      The number of config server replica set nodes [default: 1]                          │
+│ --mongos                                INTEGER                      The number of mongos routers (currently ignored) [default: 1]                       │
+│ --auth              --no-auth                                        Whether to enable authentication (currently ignored) [default: no-auth]             │
+│ --username                              TEXT                         Optional authentication username [default: None]                                    │
+│ --password                              TEXT                         Optional authentication password [default: None]                                    │
+│ --auth-db                               TEXT                         Authorization DB (currently ignored) [default: None]                                │
+│ --auth-roles                            TEXT                         Default authentication roles (currently ignored)                                    │
+│                                                                      [default: dbAdminAnyDatabase readWriteAnyDatabase userAdminAnyDatabase              │
+│                                                                      clusterAdmin]                                                                       │
+│ --image-repo                            TEXT                         [default: mongo]                                                                    │
+│ --image-tag                             TEXT                         The MongoDB image tag, which determines the MongoDB version to install              │
+│                                                                      [default: latest]                                                                   │
+│ --network-name                          TEXT                         The Docker network to provision the deployment in; will create a new one or use an  │
+│                                                                      existing one with the same name if such network exists                              │
+│                                                                      [default: mongo_network]                                                            │
+│ --help                                                               Show this message and exit.                                                         │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ```
 
 ### Describe Deployments
