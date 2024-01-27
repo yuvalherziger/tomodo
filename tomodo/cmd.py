@@ -1,6 +1,7 @@
 import logging
 from enum import Enum
 from sys import exit
+from typing import Dict
 
 import docker
 import typer
@@ -12,6 +13,7 @@ from tomodo.common import TOMODO_VERSION
 from tomodo.common.cleaner import Cleaner
 from tomodo.common.config import ProvisionerConfig
 from tomodo.common.errors import EmptyDeployment
+from tomodo.common.models import Deployment
 from tomodo.common.provisioner import Provisioner
 from tomodo.common.reader import Reader
 from tomodo.common.starter import Starter
@@ -34,6 +36,12 @@ logger = logging.getLogger("rich")
 class LogLevel(str, Enum):
     INFO = "INFO"
     DEBUG = "DEBUG"
+
+
+class OutputFormat(str, Enum):
+    JSON = "json"
+    TABLE = "table"
+    YAML = "yaml"
 
 
 def check_docker():
@@ -302,6 +310,7 @@ def remove(
             logger.exception("Could not remove your deployments - an error has occurred")
             exit(1)
 
+
 @cli.command(
     help="List deployments",
     no_args_is_help=False,
@@ -309,12 +318,17 @@ def remove(
 def list_(
         exclude_stopped: bool = typer.Option(
             default=False,
-            help="Exclude stopped deployments"
+            help="Exclude stopped deployments",
         ),
+        output: OutputFormat = typer.Option(
+            default=OutputFormat.TABLE,
+            help="Output format"
+        )
 ):
     check_docker()
     reader = Reader()
     try:
+        deployments: Dict[str, Deployment] = reader.get_all_deployments(include_stopped=not exclude_stopped)
         markdown = Markdown(reader.list_all(include_stopped=not exclude_stopped))
         console.print(markdown)
     except Exception as e:
