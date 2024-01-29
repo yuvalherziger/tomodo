@@ -8,7 +8,6 @@ from rich.console import Console
 
 from tomodo.common.errors import EmptyDeployment, InvalidDeploymentType
 from tomodo.common.models import Deployment, Mongod, ReplicaSet, ShardedCluster, Mongos, Shard
-from tomodo.common.util import get_deployment_summary
 
 io = io.StringIO()
 
@@ -17,9 +16,11 @@ logger = logging.getLogger("rich")
 
 SOURCE_KEY = "source"
 SOURCE_VALUE = "tomodo"
-RUNNING_PARTIALLY = "Running partially"
 RUNNING = "Running"
 STOPPED = "Stopped"
+STANDALONE = "Standalone"
+REPLICA_SET = "Replica Set"
+SHARDED_CLUSTER = "Sharded Cluster"
 
 
 def port_sorter(c: Dict):
@@ -28,6 +29,17 @@ def port_sorter(c: Dict):
 
 def shard_and_port_sorter(c: Dict):
     return int(c.get("tomodo-shard-id", 0)) * int(c.get("tomodo-port", 0))
+
+
+def transform_deployment_type(depl: str) -> str:
+    res = depl.replace(" ", "-").replace("_", "-").lower()
+    if res == "standalone":
+        return STANDALONE
+    if res == "replica-set":
+        return REPLICA_SET
+    if res == "sharded-cluster":
+        return SHARDED_CLUSTER
+    raise InvalidDeploymentType
 
 
 def _key_by(list_of_dicts: List[Dict], attr: str) -> Dict[str, List[Dict]]:
@@ -45,13 +57,13 @@ def _key_by(list_of_dicts: List[Dict], attr: str) -> Dict[str, List[Dict]]:
 def marshal_deployment(components: List[Dict]) -> Deployment:
     if len(components) == 0:
         raise EmptyDeployment()
-    deployment_type = components[0].get("tomodo-type")
+    deployment_type = transform_deployment_type(components[0].get("tomodo-type"))
 
-    if deployment_type == "replica-set":
+    if deployment_type == "Replica Set":
         return marshal_replica_set(components)
-    elif deployment_type == "sharded-cluster":
+    elif deployment_type == "Sharded Cluster":
         return marshal_sharded_cluster(components)
-    elif deployment_type == "standalone":
+    elif deployment_type == "Standalone":
         return marshal_standalone_instance(component=components[0])
     else:
         raise InvalidDeploymentType(deployment_type)
@@ -65,17 +77,20 @@ def marshal_replica_set(components: List[Dict]) -> ReplicaSet:
     running_containers = 0
     members = []
     for component in sorted_components:
+        container: Container = component.get("tomodo-container")
         members.append(
             Mongod(
                 port=int(component.get("tomodo-port", 0)),
                 hostname=component.get("tomodo-name"),
                 name=component.get("tomodo-name"),
                 container_id=component.get("tomodo-container-id"),
-                host_data_dir=component.get("tomodo-data-dir")
+                host_data_dir=component.get("tomodo-data-dir"),
+                container=container,
+                mongo_version=_read_mongo_version_from_container(container)
             )
         )
 
-        if component.get("tomodo-container-status") == "running":
+        if container.status == "running":
             running_containers += 1
         else:
             stopped_containers += 1
@@ -85,9 +100,7 @@ def marshal_replica_set(components: List[Dict]) -> ReplicaSet:
         start_port=members[0].port,
         size=len(members)
     )
-    if running_containers * stopped_containers > 0:
-        replica_set.last_known_state = RUNNING_PARTIALLY
-    elif running_containers > 0:
+    if running_containers > 0:
         replica_set.last_known_state = RUNNING
     else:
         replica_set.last_known_state = STOPPED
@@ -101,17 +114,18 @@ def split_into_chunks(lst, y):
 
 
 def marshal_standalone_instance(component: Dict) -> Mongod:
-    name = component.get("tomodo-group")
+    container: Container = component.get("tomodo-container")
     mongo_version = component.get("tomodo-mongo-version")
     mongod = Mongod(
         port=int(component.get("tomodo-port", 0)),
         hostname=component.get("tomodo-name"),
         name=component.get("tomodo-name"),
         container_id=component.get("tomodo-container-id"),
-        host_data_dir=component.get("tomodo-data-dir")
+        host_data_dir=component.get("tomodo-data-dir"),
+        container=container
     )
     mongod.mongo_version = mongo_version
-    mongod.last_known_state = RUNNING if component.get("tomodo-container-status") == "running" else STOPPED
+    mongod.last_known_state = RUNNING if container.status == "running" else STOPPED
     return mongod
 
 
@@ -127,16 +141,18 @@ def marshal_sharded_cluster(components: List[Dict]) -> ShardedCluster:
 
     cfg_server_members = []
     for component in config_svr_components:
+        container: Container = component.get("tomodo-container")
         cfg_server_members.append(
             Mongod(
                 port=int(component.get("tomodo-port", 0)),
                 hostname=component.get("tomodo-name"),
                 name=component.get("tomodo-name"),
                 container_id=component.get("tomodo-container-id"),
-                host_data_dir=component.get("tomodo-data-dir")
+                host_data_dir=component.get("tomodo-data-dir"),
+                container=container
             )
         )
-        if component.get("tomodo-container-status") == "running":
+        if container.status == "running":
             running_containers += 1
         else:
             stopped_containers += 1
@@ -148,16 +164,18 @@ def marshal_sharded_cluster(components: List[Dict]) -> ShardedCluster:
     )
     routers = []
     for component in mongos_components:
+        container: Container = component.get("tomodo-container")
         routers.append(
             Mongos(
                 port=int(component.get("tomodo-port", 0)),
                 hostname=component.get("tomodo-name"),
                 name=component.get("tomodo-name"),
                 container_id=component.get("tomodo-container-id"),
-                _type="mongos"
+                _type="mongos",
+                container=container
             )
         )
-        if component.get("tomodo-container-status") == "running":
+        if container.status == "running":
             running_containers += 1
         else:
             stopped_containers += 1
@@ -171,16 +189,18 @@ def marshal_sharded_cluster(components: List[Dict]) -> ShardedCluster:
     for shard_components in chunked_shard_components:
         members = []
         for component in shard_components:
+            container: Container = component.get("tomodo-container")
             members.append(
                 Mongod(
                     port=int(component.get("tomodo-port", 0)),
                     hostname=component.get("tomodo-name"),
                     name=component.get("tomodo-name"),
                     container_id=component.get("tomodo-container-id"),
-                    host_data_dir=component.get("tomodo-data-dir")
+                    host_data_dir=component.get("tomodo-data-dir"),
+                    container=container
                 )
             )
-            if component.get("tomodo-container-status") == "running":
+            if container.status == "running":
                 running_containers += 1
             else:
                 stopped_containers += 1
@@ -197,11 +217,10 @@ def marshal_sharded_cluster(components: List[Dict]) -> ShardedCluster:
     sharded_cluster = ShardedCluster(
         config_svr_replicaset=config_svr_replicaset,
         routers=routers,
-        shards=shards
+        shards=shards,
+        name=name
     )
-    if running_containers * stopped_containers > 0:
-        sharded_cluster.last_known_state = RUNNING_PARTIALLY
-    elif running_containers > 0:
+    if running_containers > 0:
         sharded_cluster.last_known_state = RUNNING
     else:
         sharded_cluster.last_known_state = STOPPED
@@ -209,12 +228,21 @@ def marshal_sharded_cluster(components: List[Dict]) -> ShardedCluster:
     return sharded_cluster
 
 
+def _read_mongo_version_from_container(container: Container) -> str:
+    return next(
+        (
+            var.split("=")[1] for var in container.attrs.get("Config", {}).get("Env", []) if
+            var.startswith("MONGO_VERSION=")
+        ),
+        None
+    )
+
+
 class Reader:
     def __init__(self):
         self.docker_client = docker.from_env()
 
-    def list_all(self, include_stopped: bool = True):
-        deployments = self.get_all_deployments(include_stopped=include_stopped)
+    def list_deployments_in_markdown_table(self, deployments: Dict[str, Deployment], include_stopped: bool = True):
         headers = ["Name", "Type", "Status", "Containers", "Version", "Port(s)"]
         rows = [
             "| " + "|".join(headers) + " |",
@@ -222,54 +250,49 @@ class Reader:
         ]
         for name in deployments.keys():
             depl = deployments.get(name)
-            cells = [name, depl.deployment_type, depl.last_known_state, str(depl.container_count),
-                     depl.mongo_version or "unknown", depl.port_range]
-            rows.append("| " + "|".join(cells) + " |")
+            rows.append(depl.as_markdown_table_row(name))
         return "\n".join(rows)
 
-    def describe_all(self, include_stopped: bool = False) -> str:
-        deployments = self.get_all_deployments(include_stopped=include_stopped)
+    def describe_all(self, include_stopped: bool = False) -> List[str]:
+        deployments: Dict[str, Deployment] = self.get_all_deployments(include_stopped=include_stopped)
         descriptions = []
         for deployment_name in deployments.keys():
-            descriptions.append(get_deployment_summary(deployments[deployment_name], deployment_name))
+            descriptions.append(deployments[deployment_name].as_markdown_table())
         return descriptions
 
     def describe_by_name(self, name: str, include_stopped: bool = False) -> str:
         deployment: Deployment = self.get_deployment_by_name(name, include_stopped=include_stopped)
-        return get_deployment_summary(deployment, name)
+        return deployment.as_markdown_table()
 
-    def get_all_deployments(self, include_stopped: bool = False) -> Dict[str, Deployment]:
-        containers = self.docker_client.containers.list(filters={"label": f"{SOURCE_KEY}={SOURCE_VALUE}"},
-                                                        all=include_stopped)
-        container_labels = []
+    def _extract_details_from_containers(self, containers) -> List[Dict]:
+        container_details = []
         for container in containers:
-            env_vars = container.attrs.get("Config", {}).get("Env", [])
-            mongo_version = next((var.split('=')[1] for var in env_vars if var.startswith('MONGO_VERSION=')), None)
-            container_labels.append({
+            mongo_version = _read_mongo_version_from_container(container)
+            container_details.append({
                 **container.labels,
                 "tomodo-container-id": container.short_id,
                 "tomodo-container-status": container.status,
                 "tomodo-mongo-version": mongo_version,
+                "tomodo-type": container.labels.get("tomodo-type", "Standalone"),
+                "tomodo-container": container,
             })
-        unmarshalled = _key_by(container_labels, "tomodo-group")
+        return container_details
 
+    def _get_containers(self, name: str = None, include_stopped: bool = False) -> List[Dict]:
+        container_filters = {"label": f"{SOURCE_KEY}={SOURCE_VALUE}"}
+        if name:
+            container_filters = {"label": f"tomodo-group={name}"}
+        containers = self.docker_client.containers.list(filters=container_filters, all=include_stopped)
+        return self._extract_details_from_containers(containers=containers)
+
+    def get_all_deployments(self, include_stopped: bool = False) -> Dict[str, Deployment]:
+        container_details = self._get_containers(include_stopped=include_stopped)
+        unmarshalled = _key_by(container_details, "tomodo-group")
         return {
             deployment_name: marshal_deployment(unmarshalled[deployment_name])
             for deployment_name in unmarshalled.keys()
         }
 
     def get_deployment_by_name(self, name: str, include_stopped: bool = False) -> Deployment:
-        containers: List[Container] = self.docker_client.containers.list(filters={"label": f"tomodo-group={name}"},
-                                                                         all=include_stopped)
-        container_labels = []
-        for container in containers:
-            env_vars = container.attrs.get("Config", {}).get("Env", [])
-            mongo_version = next((var.split('=')[1] for var in env_vars if var.startswith('MONGO_VERSION=')), None)
-
-            container_labels.append({
-                **container.labels,
-                "tomodo-container-id": container.short_id,
-                "tomodo-container-status": container.status,
-                "tomodo-mongo-version": mongo_version,
-            })
-        return marshal_deployment(container_labels)
+        container_details = self._get_containers(name=name, include_stopped=include_stopped)
+        return marshal_deployment(container_details)

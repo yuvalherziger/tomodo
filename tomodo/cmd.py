@@ -1,4 +1,5 @@
 import logging
+import sys
 from enum import Enum
 from sys import exit
 from typing import Dict
@@ -8,6 +9,7 @@ import typer
 from rich.console import Console
 from rich.logging import RichHandler
 from rich.markdown import Markdown
+from ruamel.yaml import YAML
 
 from tomodo.common import TOMODO_VERSION
 from tomodo.common.cleaner import Cleaner
@@ -20,6 +22,7 @@ from tomodo.common.starter import Starter
 from tomodo.common.util import AnonymizingFilter, is_docker_running
 
 console = Console()
+yaml = YAML()
 
 cli = typer.Typer(no_args_is_help=True)
 
@@ -173,16 +176,27 @@ def describe(
         ),
         exclude_stopped: bool = typer.Option(
             default=False,
-            help="Exclude stopped deployments (if '--name' not provided)"
+            help="Exclude stopped deployments (if '--name' is not provided)"
         ),
+        output: OutputFormat = typer.Option(
+            default=OutputFormat.TABLE,
+            help="Output format"
+        )
 ):
     check_docker()
     reader = Reader()
 
     if name:
         try:
-            markdown = Markdown(reader.describe_by_name(name, include_stopped=True))
-            console.print(markdown)
+            if output == OutputFormat.JSON:
+                deployment = reader.get_deployment_by_name(name, include_stopped=True)
+                console.print_json(data=deployment.as_dict(detailed=True))
+            elif output == OutputFormat.YAML:
+                deployment = reader.get_deployment_by_name(name, include_stopped=True)
+                yaml.dump(data=deployment.as_dict(detailed=True), stream=sys.stdout)
+            else:
+                markdown = Markdown(reader.describe_by_name(name, include_stopped=True))
+                console.print(markdown)
         except EmptyDeployment:
             logger.error("A deployment named '%s' doesn't exist", name)
         except Exception as e:
@@ -329,8 +343,21 @@ def list_(
     reader = Reader()
     try:
         deployments: Dict[str, Deployment] = reader.get_all_deployments(include_stopped=not exclude_stopped)
-        markdown = Markdown(reader.list_all(include_stopped=not exclude_stopped))
-        console.print(markdown)
+        if len(deployments) == 0:
+            markdown = Markdown(
+                "\n\nNo deployments are running. To provision a deployment, check out `tomodo provision --help`.\n"
+            )
+            console.print(markdown)
+        elif output == OutputFormat.JSON:
+            console.print_json(data={name: deployments[name].as_dict() for name in deployments.keys()})
+        elif output == OutputFormat.YAML:
+            data = {name: deployments[name].as_dict() for name in deployments.keys()}
+            yaml.dump(data, stream=sys.stdout)
+        else:
+            markdown = Markdown(
+                reader.list_deployments_in_markdown_table(deployments, include_stopped=not exclude_stopped),
+            )
+            console.print(markdown)
     except Exception as e:
         logger.exception("Could not list your deployments - an error has occurred")
         exit(1)

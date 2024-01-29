@@ -3,7 +3,6 @@ import logging
 import os
 import platform
 import secrets
-from sys import exit
 from typing import List
 
 import docker
@@ -61,7 +60,7 @@ class Provisioner:
         self.print_connection_details(deployment=deployment)
 
     def print_deployment_summary(self, deployment: Deployment = None):
-        summary_md = get_deployment_summary(deployment, self.config.name)
+        summary_md = deployment.as_markdown_table()
         markdown = Markdown(summary_md)
         console.print(markdown)
 
@@ -150,7 +149,8 @@ tomodo describe --name {self.config.name}
             port=mongos_port,
             hostname=f"mongodb://{self.config.name}-mongos:{mongos_port}",
             name=f"{self.config.name}-mongos",
-            _type="mongos"
+            _type="mongos",
+            container=mongos_container
         )
         mongos.container_id = mongos_container.short_id
 
@@ -196,6 +196,7 @@ tomodo describe --name {self.config.name}
                     port=port,
                     hostname=f"mongodb://{replicaset.name}-{idx}:{port}",
                     name=f"{replicaset.name}-{idx}",
+                    deployment_type="Sharded Cluster" if shard_id or config_svr else "Replica Set"
                 )
             )
 
@@ -204,7 +205,7 @@ tomodo describe --name {self.config.name}
             raise PortsTakenException
         # Provision nodes:
         for member in replicaset.members:
-            container, host_data_dir, container_data_dir = self.create_db_container(
+            container, host_data_dir, container_data_dir = self.create_mongod_container(
                 port=member.port,
                 name=member.name,
                 replset_name=replicaset.name,
@@ -225,10 +226,11 @@ tomodo describe --name {self.config.name}
         logger.info("This action will provision a standalone MongoDB instance")
         if not is_port_range_available((mongod.port,)):
             raise PortsTakenException
-        container, host_data_dir, container_data_dir = self.create_db_container(
+        container, host_data_dir, container_data_dir = self.create_mongod_container(
             port=mongod.port,
             name=mongod.name
         )
+        mongod.container = container
         mongod.container_id = container.short_id
         mongod.host_data_dir = host_data_dir
         mongod.container_data_dir = container_data_dir
@@ -293,13 +295,13 @@ tomodo describe --name {self.config.name}
                 "tomodo-group": self.config.name,
                 "tomodo-port": str(port),
                 "tomodo-role": "mongos",
-                "tomodo-type": "sharded-cluster",
+                "tomodo-type": "Sharded Cluster",
                 "tomodo-shard-count": str(self.config.shards or 0),
             }
         )
 
-    def create_db_container(self, port: int, name: str, replset_name: str = None,
-                            config_svr: bool = False, sh_cluster: bool = False, shard_id: int = 0) -> Container:
+    def create_mongod_container(self, port: int, name: str, replset_name: str = None,
+                                config_svr: bool = False, sh_cluster: bool = False, shard_id: int = 0) -> Container:
         data_dir_name = f"data/{name}-db"
         data_dir_path = os.path.join("/tmp/tomodo", data_dir_name)
         os.makedirs(data_dir_path, exist_ok=True)
@@ -336,13 +338,16 @@ tomodo describe --name {self.config.name}
                 Mount(target="/etc/mongo/mongo_keyfile", source=keyfile_path, type="bind")
             )
             command.extend(["--keyFile", "/etc/mongo/mongo_keyfile"])
-
+        deployment_type = "Standalone"
         if config_svr:
             command.extend(["--configsvr", "--replSet", replset_name])
+            deployment_type = "Sharded Cluster"
         elif self.config.replica_set:
             command.extend(["--replSet", replset_name])
+            deployment_type = "Replica Set"
         elif self.config.sharded:
             command.extend(["--shardsvr", "--replSet", replset_name])
+            deployment_type = "Sharded Cluster"
         networking_config = NetworkingConfig(
             endpoints_config={
                 self.network.name: EndpointConfig(version=DOCKER_ENDPOINT_CONFIG_VER, aliases=[name])
@@ -368,7 +373,7 @@ tomodo describe --name {self.config.name}
                 "tomodo-group": self.config.name,
                 "tomodo-port": str(port),
                 "tomodo-role": "cfg-svr" if config_svr else "rs-member" if replset_name else "standalone",
-                "tomodo-type": "sharded-cluster" if sh_cluster else ("replica-set" if replset_name else "standalone"),
+                "tomodo-type": deployment_type,
                 "tomodo-data-dir": host_path,
                 "tomodo-shard-id": str(shard_id),
                 "tomodo-shard-count": str(self.config.shards or 0),
