@@ -33,31 +33,41 @@ jobs:
         run: poetry install
 
       - name: Build package
-        run: poetry run build
+        run: |
+          poetry run build-amd64
+          # poetry run build-arm64
 
       - name: Create Custom Tarball
         run: |
           VERSION=${{ github.ref_name }}
-          DIR_TO_PACKAGE="dist/tomodo"
-          TAR_NAME="tomodo-$VERSION.tar.gz"
-          tar -czvf dist/$TAR_NAME -C ${DIR_TO_PACKAGE} .
+          tar -czvf ./tomodo-amd64-$VERSION.tar.gz -C dist-amd64/tomodo .
+          # tar -czvf ./tomodo-arm64-$VERSION.tar.gz -C dist-arm64/tomodo .
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v2
         with:
           name: release-tarball
-          path: dist/*.tar.gz
+          path: ./*.tar.gz
 
-      - name: Upload Release Asset
+      - name: Upload AMD64 Release Asset
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.TAP_PAT }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./dist/tomodo-${{ github.ref_name }}.tar.gz
-          asset_name: tomodo-${{ github.ref_name }}.tar.gz
+          asset_path: ./tomodo-amd64-${{ github.ref_name }}.tar.gz
+          asset_name: tomodo-amd64-${{ github.ref_name }}.tar.gz
           asset_content_type: application/gzip
 
+#      - name: Upload ARM64 Release Asset
+#        uses: actions/upload-release-asset@v1
+#        env:
+#          GITHUB_TOKEN: ${{ secrets.TAP_PAT }}
+#        with:
+#          upload_url: ${{ github.event.release.upload_url }}
+#          asset_path: ./tomodo-arm64-${{ github.ref_name }}.tar.gz
+#          asset_name: tomodo-arm64-${{ github.ref_name }}.tar.gz
+#          asset_content_type: application/gzip
 #      - name: Update Homebrew formula
 #        env:
 #          TAP_REPO: yuviherziger/homebrew-tomodo
