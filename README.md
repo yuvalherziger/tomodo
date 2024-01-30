@@ -33,6 +33,9 @@ and sharded clusters.
 
 ### Install with Homebrew
 
+PLEASE NOTE: Due to a bug in this project's build workflow, the package is always built for ARM64.  If you use an Apple chip,
+[install the project with Python](#install-with-python) for now.
+
 [Homebrew](https://brew.sh/) is a popular package manager for macOS. You can install tomodo by
 running the following commands:
 
