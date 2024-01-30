@@ -1,5 +1,5 @@
 <div align="center">
-  <img height="250px" src="tomodo-nopg.png" alt="tomodo logo"></img>
+  <img height="250px" src="https://github.com/yuviherziger/tomodo/raw/main/tomodo-nopg.png" alt="tomodo logo"></img>
 
 ![Latest Release](https://img.shields.io/github/v/release/yuviherziger/tomodo?display_name=release&style=flat&color=%2332c955)
 ![Unit Tests](https://github.com/yuviherziger/tomodo/actions/workflows/unit-tests.yml/badge.svg)
@@ -16,9 +16,10 @@ and sharded clusters.
 
 * [Installation](#installation)
     + [Install with Homebrew](#install-with-homebrew)
-    + [Install with Python](#install-with-python)
-        - [Install with Poetry Package Manager for Python](#install-with-poetry-package-manager-for-python)
     + [Install with pip](#install-with-pip)
+    + [Install from Source](#install-from-source)
+        - [Install with Poetry Package Manager for Python](#install-with-poetry-package-manager-for-python)
+        - [Install from source with pip](#install-from-source-with-pip)
 * [CLI Usage](#cli-usage)
     + [Create a Deployment](#create-a-deployment)
     + [Describe Deployments](#describe-deployments)
@@ -47,12 +48,19 @@ After installing the tool with `brew`, you can run it the following way:
 tomodo --help
 ```
 
-### Install with Python
+### Install with pip
+
+To install with `pip`, run the following command:
+
+```shell
+pip install tomodo
+```
+
+### Install from Source
 
 If you wish to set up a development environment, or if you simply can't use Homebrew or aren't a macOS user,
 you can install tomodo using Python. The recommended way to perform the Python installation is by using the
-[Poetry](https://python-poetry.org/) Python package manager. However, it's also possible to install tomodo and
-its dependencies with `pip` (see [here](#install-with-pip)).
+[Poetry](https://python-poetry.org/) Python package manager.
 
 **Requirements:**
 
@@ -64,6 +72,8 @@ If you have the [Poetry](https://python-poetry.org/) Python package manager inst
 the CLI the following way:
 
 ```bash
+git clone https://github.com/yuviherziger/tomodo.git
+cd tomodo
 poetry shell
 poetry install
 ```
@@ -74,11 +84,13 @@ After installing the tool with Poetry, you can run it the following way:
 tomodo --help
 ```
 
-### Install with pip
+#### Install from source with pip
 
 You can install the dependencies with pip using the following command:
 
 ```bash
+git clone https://github.com/yuviherziger/tomodo.git
+cd tomodo
 pip install .
 ```
 
