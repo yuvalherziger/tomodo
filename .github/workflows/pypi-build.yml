@@ -1,0 +1,32 @@
+name: Publish to PyPi
+on:
+  release:
+    types: [created]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      id-token: write
+    strategy:
+      matrix:
+        python-version: [3.8]
+        poetry-version: [1.5.1]
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Run image
+        uses: abatilo/actions-poetry@v2.3.0
+        with:
+          poetry-version: ${{ matrix.poetry-version }}
+      - name: Configure authenticate
+        run: poetry config pypi-token.pypi "${{ secrets.PYPI_TOKEN }}"
+      - name: Install dependencies
+        run: poetry install
+      - name: Build package
+        run: poetry build
+      - name: Publish package
+        run: poetry publish -n
