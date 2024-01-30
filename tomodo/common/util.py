@@ -5,7 +5,6 @@ import logging
 import re
 import socket
 import time
-from sys import exit
 from typing import Tuple, Type, Dict, Union
 
 import docker
@@ -171,89 +170,14 @@ def cleanup_mongo_output(output: str) -> str:
     )
 
 
-def get_deployment_summary(deployment: Deployment, name: str) -> str:
+# TODO: Shouldn't stay in this module
+def get_deployment_summary(deployment: Deployment) -> str:
     if isinstance(deployment, ShardedCluster):
-        return get_sharded_cluster_summary(deployment, name)
+        return deployment.as_markdown_table()
     if isinstance(deployment, ReplicaSet):
-        return get_replica_set_summary(deployment, name)
+        return deployment.as_markdown_table()
     if isinstance(deployment, Mongod):
-        return get_standalone_instance_summary(deployment, name)
-
-
-def get_replica_set_summary(replica_set: ReplicaSet, name: str = "replica set") -> str:
-    headers = ["Name", "Port", "Type", "Hostname", "Container ID"]
-    rows = [
-        f"## {replica_set.name} (replica set)",
-        "| " + " | ".join(headers) + " |",
-        "| " + "|".join(["------" for _ in range(len(headers))]) + " |",
-    ]
-    for member in replica_set.members:
-        cells = [
-            member.name,
-            str(member.port),
-            member.type,
-            f"{member.name}:{member.port}",
-            member.container_id or "N\A"
-        ]
-        rows.append("| " + "|".join(cells) + " |")
-    return "\n".join(rows)
-
-
-def get_standalone_instance_summary(instance: Mongod, name: str = "Standalone") -> str:
-    headers = ["Name", "Port", "Type", "Hostname", "Container ID"]
-    rows = [
-        f"## {name} (standalone)",
-        "| " + " | ".join(headers) + " |",
-        "| " + "|".join(["------" for _ in range(len(headers))]) + " |",
-    ]
-    cells = [
-        name,
-        str(instance.port),
-        "mongod",
-        f"{instance.name}:{instance.port}",
-        instance.container_id or "N\A"
-    ]
-    rows.append("| " + "|".join(cells) + " |")
-    return "\n".join(rows)
-
-
-def get_sharded_cluster_summary(cluster: ShardedCluster, name: str = "sharded cluster") -> str:
-    headers = ["Name", "Port", "Type", "Hostname", "Container ID"]
-    rows = [
-        f"## {name} (sharded cluster)",
-        "| " + " | ".join(headers) + " |",
-        "| " + "|".join(["------" for _ in range(len(headers))]) + " |",
-    ]
-    for config_server in cluster.config_svr_replicaset.members:
-        cells = [
-            config_server.name,
-            str(config_server.port),
-            "mongod (config)",
-            f"{config_server.name}:{config_server.port}",
-            config_server.container_id or "N/A",
-        ]
-        rows.append("| " + "|".join(cells) + " |")
-    for router in cluster.routers:
-        cells = [
-            router.name,
-            str(router.port),
-            "mongos",
-            f"{router.name}:{router.port}",
-            router.container_id or "N/A",
-        ]
-        rows.append("| " + "|".join(cells) + " |")
-
-    for shard in cluster.shards:
-        for member in shard.members:
-            cells = [
-                member.name,
-                str(member.port),
-                "mongod",
-                f"{member.name}:{member.port}",
-                member.container_id or "N/A",
-            ]
-            rows.append("| " + "|".join(cells) + " |")
-    return "\n".join(rows)
+        return deployment.as_markdown_table()
 
 
 def is_docker_running():

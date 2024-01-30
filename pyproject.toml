@@ -29,4 +29,5 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
 tomodo = "tomodo.cmd:run"
-build = "tomodo.packager:install"
+build-amd64 = "tomodo.packager:install_amd64"
+build-arm64 = "tomodo.packager:install_arm64"
