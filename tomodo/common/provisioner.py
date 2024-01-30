@@ -18,8 +18,7 @@ from tomodo.common.config import ProvisionerConfig
 from tomodo.common.errors import InvalidConfiguration, PortsTakenException
 from tomodo.common.models import Mongod, ReplicaSet, ShardedCluster, Mongos, Shard, ConfigServer, Deployment
 from tomodo.common.util import (
-    is_port_range_available, with_retry, run_mongo_shell_command,
-    get_deployment_summary
+    is_port_range_available, with_retry, run_mongo_shell_command
 )
 
 DOCKER_ENDPOINT_CONFIG_VER = "1.43"
@@ -37,10 +36,23 @@ class Provisioner:
         self.config = config
         self.docker_client = docker.from_env()
 
+    def check_and_pull_image(self, image_name: str):
+        try:
+            self.docker_client.images.get(image_name)
+            logger.info("Image '%s' was found locally", image_name)
+        except docker.errors.ImageNotFound:
+            # If not found, pull the image
+            logger.info("Pulling image '%s' from registry", image_name)
+            self.docker_client.images.pull(image_name)
+            logger.info("Pulled image '%s' successfully", image_name)
+        except docker.errors.APIError as e:
+            raise
+
     def provision(self) -> None:
         if sum([self.config.standalone, self.config.replica_set, self.config.sharded]) != 1:
             logger.error("Exactly one of the following has to be specified: standalone, replica-set, or sharded")
             raise InvalidConfiguration
+        self.check_and_pull_image(f"{self.config.image_repo}:{self.config.image_tag}")
         self.network = self.get_network()
         deployment: Deployment = Deployment()
         if self.config.standalone:
