@@ -27,6 +27,7 @@ and sharded clusters.
     + [Stop Deployments](#stop-deployments)
     + [Start Deployments](#start-deployments)
     + [Remove Deployments](#remove-deployments)
+* [Programmatic Usage](#programmatic-usage)
 
 --- 
 
@@ -226,4 +227,24 @@ tomodo remove --name troubled-narwhal
 
 # Remove a deployment without prompting for confirmation
 tomodo remove --auto-approve
+```
+
+## Programmatic Usage
+
+You can install tomodo in your Python (>=3.8) projects using `pip` or any other Python package manager, and use it
+programmatically. You'll still need a Docker machine running, but you'll be able to invoke tomodo programmatically.
+
+```python
+from tomodo import Provisioner, ProvisionerConfig
+
+provisioner = Provisioner(
+    config=ProvisionerConfig(
+        port=20000,
+        replica_set=True,
+        replicas=3,
+        name="my-replica-set"
+    )
+)
+
+deployment = provisioner.provision()
 ```
