@@ -16,8 +16,8 @@ logger = logging.getLogger("rich")
 
 SOURCE_KEY = "source"
 SOURCE_VALUE = "tomodo"
-RUNNING = "Running"
-STOPPED = "Stopped"
+RUNNING = "running"
+STOPPED = "stopped"
 STANDALONE = "Standalone"
 REPLICA_SET = "Replica Set"
 SHARDED_CLUSTER = "Sharded Cluster"
@@ -78,17 +78,18 @@ def marshal_replica_set(components: List[Dict]) -> ReplicaSet:
     members = []
     for component in sorted_components:
         container: Container = component.get("tomodo-container")
-        members.append(
-            Mongod(
-                port=int(component.get("tomodo-port", 0)),
-                hostname=component.get("tomodo-name"),
-                name=component.get("tomodo-name"),
-                container_id=component.get("tomodo-container-id"),
-                host_data_dir=component.get("tomodo-data-dir"),
-                container=container,
-                mongo_version=_read_mongo_version_from_container(container)
-            )
+        mongod = Mongod(
+            port=int(component.get("tomodo-port", 0)),
+            hostname=component.get("tomodo-name"),
+            name=component.get("tomodo-name"),
+            container_id=component.get("tomodo-container-id"),
+            host_data_dir=component.get("tomodo-data-dir"),
+            container_data_dir=component.get("tomodo-container-data-dir"),
+            container=container,
+            mongo_version=_read_mongo_version_from_container(container)
         )
+        mongod.last_known_state = container.status
+        members.append(mongod)
 
         if container.status == "running":
             running_containers += 1
@@ -122,6 +123,7 @@ def marshal_standalone_instance(component: Dict) -> Mongod:
         name=component.get("tomodo-name"),
         container_id=component.get("tomodo-container-id"),
         host_data_dir=component.get("tomodo-data-dir"),
+        container_data_dir=component.get("tomodo-container-data-dir"),
         container=container
     )
     mongod.mongo_version = mongo_version
@@ -142,16 +144,17 @@ def marshal_sharded_cluster(components: List[Dict]) -> ShardedCluster:
     cfg_server_members = []
     for component in config_svr_components:
         container: Container = component.get("tomodo-container")
-        cfg_server_members.append(
-            Mongod(
-                port=int(component.get("tomodo-port", 0)),
-                hostname=component.get("tomodo-name"),
-                name=component.get("tomodo-name"),
-                container_id=component.get("tomodo-container-id"),
-                host_data_dir=component.get("tomodo-data-dir"),
-                container=container
-            )
+        mongod = Mongod(
+            port=int(component.get("tomodo-port", 0)),
+            hostname=component.get("tomodo-name"),
+            name=component.get("tomodo-name"),
+            container_id=component.get("tomodo-container-id"),
+            host_data_dir=component.get("tomodo-data-dir"),
+            container_data_dir=component.get("tomodo-container-data-dir"),
+            container=container
         )
+        mongod.last_known_state = container.status
+        cfg_server_members.append(mongod)
         if container.status == "running":
             running_containers += 1
         else:
@@ -165,16 +168,17 @@ def marshal_sharded_cluster(components: List[Dict]) -> ShardedCluster:
     routers = []
     for component in mongos_components:
         container: Container = component.get("tomodo-container")
-        routers.append(
-            Mongos(
-                port=int(component.get("tomodo-port", 0)),
-                hostname=component.get("tomodo-name"),
-                name=component.get("tomodo-name"),
-                container_id=component.get("tomodo-container-id"),
-                _type="mongos",
-                container=container
-            )
+        mongos = Mongos(
+            port=int(component.get("tomodo-port", 0)),
+            hostname=component.get("tomodo-name"),
+            name=component.get("tomodo-name"),
+            container_id=component.get("tomodo-container-id"),
+            deployment_type="mongos",
+            _type="mongos",
+            container=container
         )
+        mongos.last_known_state = container.status
+        routers.append(mongos)
         if container.status == "running":
             running_containers += 1
         else:
@@ -190,16 +194,18 @@ def marshal_sharded_cluster(components: List[Dict]) -> ShardedCluster:
         members = []
         for component in shard_components:
             container: Container = component.get("tomodo-container")
-            members.append(
-                Mongod(
-                    port=int(component.get("tomodo-port", 0)),
-                    hostname=component.get("tomodo-name"),
-                    name=component.get("tomodo-name"),
-                    container_id=component.get("tomodo-container-id"),
-                    host_data_dir=component.get("tomodo-data-dir"),
-                    container=container
-                )
+            mongod = Mongod(
+                port=int(component.get("tomodo-port", 0)),
+                hostname=component.get("tomodo-name"),
+                name=component.get("tomodo-name"),
+                container_id=component.get("tomodo-container-id"),
+                host_data_dir=component.get("tomodo-data-dir"),
+                container_data_dir=component.get("tomodo-container-data-dir"),
+                deployment_type="mongod",
+                container=container,
             )
+            mongod.last_known_state = container.status
+            members.append(mongod)
             if container.status == "running":
                 running_containers += 1
             else:
@@ -210,7 +216,8 @@ def marshal_sharded_cluster(components: List[Dict]) -> ShardedCluster:
                 members=members,
                 name=name,
                 size=len(shard_components),
-                start_port=int(shard_components[0].get("tomodo-port", 0))
+                start_port=int(shard_components[0].get("tomodo-port", 0)),
+                deployment_type="shard"
             )
         )
 
