@@ -39,7 +39,7 @@ class Mongod(Deployment):
     host_data_dir: str = None
     container_data_dir: str = None
     container_count = 1
-    deployment_type: str = "Standalone"
+    deployment_type: str = "mongod"
 
     def __init__(self,
                  port: int,
@@ -51,7 +51,7 @@ class Mongod(Deployment):
                  host_data_dir: str = None,
                  container_data_dir: str = None,
                  container: Container = None,
-                 deployment_type: str = "Standalone",
+                 deployment_type: str = "mongod",
                  mongo_version: str = None):
         self.port = port
         self.hostname = hostname

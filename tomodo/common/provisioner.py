@@ -22,6 +22,7 @@ from tomodo.common.util import (
 )
 
 DOCKER_ENDPOINT_CONFIG_VER = "1.43"
+DATA_FOLDER = "/var/tmp/tomodo"
 
 console = Console()
 logger = logging.getLogger("rich")
@@ -315,7 +316,7 @@ tomodo describe --name {self.config.name}
     def create_mongod_container(self, port: int, name: str, replset_name: str = None,
                                 config_svr: bool = False, sh_cluster: bool = False, shard_id: int = 0) -> Container:
         data_dir_name = f"data/{name}-db"
-        data_dir_path = os.path.join("/tmp/tomodo", data_dir_name)
+        data_dir_path = os.path.join(f"{DATA_FOLDER}", data_dir_name)
         os.makedirs(data_dir_path, exist_ok=True)
         host_path = os.path.abspath(data_dir_path)
         container_path = f"/{data_dir_name}"
@@ -336,7 +337,7 @@ tomodo describe --name {self.config.name}
         ]
         environment = []
         if self.config.username and self.config.password:
-            keyfile_path = os.path.abspath("/tmp/tomodo/mongo_keyfile")
+            keyfile_path = os.path.abspath(f"{DATA_FOLDER}/mongo_keyfile")
             environment = [f"MONGO_INITDB_ROOT_USERNAME={self.config.username}",
                            f"MONGO_INITDB_ROOT_PASSWORD={self.config.password}"]
 
@@ -387,6 +388,7 @@ tomodo describe --name {self.config.name}
                 "tomodo-role": "cfg-svr" if config_svr else "rs-member" if replset_name else "standalone",
                 "tomodo-type": deployment_type,
                 "tomodo-data-dir": host_path,
+                "tomodo-container-data-dir": container_path,
                 "tomodo-shard-id": str(shard_id),
                 "tomodo-shard-count": str(self.config.shards or 0),
             }
