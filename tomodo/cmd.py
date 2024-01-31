@@ -12,7 +12,7 @@ from rich.markdown import Markdown
 from rich.syntax import Syntax
 from ruamel.yaml import YAML
 
-from tomodo.common import TOMODO_VERSION
+from tomodo import TOMODO_VERSION
 from tomodo.common.cleaner import Cleaner
 from tomodo.common.config import ProvisionerConfig
 from tomodo.common.errors import EmptyDeployment
