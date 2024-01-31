@@ -48,7 +48,7 @@ class Provisioner:
         except docker.errors.APIError as e:
             raise
 
-    def provision(self) -> None:
+    def provision(self) -> Deployment:
         if sum([self.config.standalone, self.config.replica_set, self.config.sharded]) != 1:
             logger.error("Exactly one of the following has to be specified: standalone, replica-set, or sharded")
             raise InvalidConfiguration
@@ -70,6 +70,7 @@ class Provisioner:
             deployment: ShardedCluster = self.provision_sharded_cluster()
         self.print_deployment_summary(deployment=deployment)
         self.print_connection_details(deployment=deployment)
+        return deployment
 
     def print_deployment_summary(self, deployment: Deployment = None):
         summary_md = deployment.as_markdown_table()
