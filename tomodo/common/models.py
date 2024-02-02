@@ -130,12 +130,14 @@ class ReplicaSet(Deployment):
     container_count: int = 3
     deployment_type: str = "Replica Set"
 
-    def __init__(self, name: str = None, start_port: int = None, members: List[Mongod] = None, size: int = 3):
+    def __init__(self, name: str = None, start_port: int = None, members: List[Mongod] = None, size: int = 3,
+                 deployment_type: str = "Replica Set"):
         self.members = members
         self.name = name
         self.start_port = start_port
         self.size = size
         self.container_count = size
+        self.deployment_type = deployment_type
 
     @property
     def hostname(self) -> str:
@@ -209,7 +211,7 @@ class ShardedCluster(Deployment):
                  mongo_version: str = None
                  ):
         self.config_svr_replicaset = config_svr_replicaset
-        self.routers = routers
+        self.routers = routers or []
         self.shards = shards
         self.name = name
         self.mongo_version = mongo_version
