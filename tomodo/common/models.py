@@ -215,7 +215,7 @@ class ShardedCluster(Deployment):
                  mongo_version: str = None
                  ):
         self.config_svr_replicaset = config_svr_replicaset
-        self.routers = routers
+        self.routers = routers or []
         self.shards = shards
         self.name = name
         self.mongo_version = mongo_version

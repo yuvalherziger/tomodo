@@ -92,19 +92,25 @@ class Provisioner:
         if self.config.is_auth_enabled:
             auth = f"{self.config.username}:********@"
         hosts = ""
-        localhost_conn_string: str = f"mongodb://{auth}localhost:{self.config.port}"
-        mapped_conn = ""
+        localhost_conn_string: List[str] = [f"mongodb://{auth}localhost:{self.config.port}"]
+        mapped_conn: List[str] = []
 
         if isinstance(deployment, Mongod):
-            mapped_conn: str = f"mongodb://{auth}{self.config.name}-1:{self.config.port}"
+            mapped_conn: List[str] = [f"mongodb://{auth}{self.config.name}-1:{self.config.port}"]
             hosts = deployment.name
         elif isinstance(deployment, ReplicaSet):
-            mapped_conn: str = f"mongodb://{auth}{self.config.name}-1:{self.config.port}/?replicaSet={self.config.name}"
+            mapped_conn: List[str] = [
+                f"mongodb://{auth}{self.config.name}-1:{self.config.port}/?replicaSet={self.config.name}"]
             hosts = ",".join([m.name for m in deployment.members])
         elif isinstance(deployment, ShardedCluster):
-            first_mongos = deployment.routers[0]
-            localhost_conn_string: str = f"mongodb://{auth}localhost:{first_mongos.port}"
-            mapped_conn: str = f"mongodb://{auth}{self.config.name}-mongos:{first_mongos.port}"
+            localhost_conn_string: List[str] = [
+                f"mongodb://{auth}localhost:{r.port}"
+                for r in deployment.routers
+            ]
+            mapped_conn: List[str] = [
+                f"mongodb://{auth}{r.name}:{r.port}"
+                for r in deployment.routers
+            ]
             host_list = []
             for m in deployment.config_svr_replicaset.members:
                 host_list.append(m.name)
@@ -115,17 +121,19 @@ class Provisioner:
                     host_list.append(m.name)
             hosts = ",".join(host_list)
         command = f"echo '127.0.0.1 {hosts}' | sudo tee -a /etc/hosts"
+        localhost_conn_strings = "\n".join(f"mongosh '{s}'" for s in localhost_conn_string)
+        mapped_conns = "\n".join(f"mongosh '{s}'" for s in mapped_conn)
         markdown = Markdown(f"""
 ```bash
 # Connect to the deployment with mongosh using localhost:
-mongosh '{localhost_conn_string}'
+{localhost_conn_strings}
  
 # Optionally, map the deployment hosts:
 {command}
 
 # Once you've mapped the hosts,
 # you'll be able to connect with mongosh this way:
-mongosh '{mapped_conn}'
+{mapped_conns}
 
 # Print the deployment details:
 tomodo describe --name {self.config.name}
@@ -136,7 +144,7 @@ tomodo describe --name {self.config.name}
         logger.info("This action will provision a MongoDB sharded cluster with %d shards (%d replicas each)",
                     self.config.shards, self.config.replicas)
         # (replicas x shards) + config server + mongos
-        num_ports = (self.config.shards * self.config.replicas) + self.config.config_servers + 1
+        num_ports = (self.config.shards * self.config.replicas) + self.config.config_servers + self.config.mongos
         ports = range(self.config.port, self.config.port + num_ports)
         if not is_port_range_available(tuple(ports)):
             raise PortsTakenException
@@ -161,24 +169,28 @@ tomodo describe --name {self.config.name}
         self.provision_replica_set(replicaset=config_svr_replicaset, config_svr=True, sh_cluster=True)
 
         sharded_cluster.config_svr_replicaset = config_svr_replicaset
-        mongos_port = self.config.port + self.config.config_servers
-        mongos_container = self.create_mongos_container(
-            port=mongos_port,
-            name=f"{self.config.name}-mongos",
-            config_svr_replicaset=config_svr_replicaset
-        )
+        last_mongos_port: int = 0
+        for i in range(self.config.mongos):
+            mongos_port = self.config.port + self.config.config_servers + i
+            mongos_name = f"{self.config.name}-mongos-{i + 1}"
+            mongos_container = self.create_mongos_container(
+                port=mongos_port,
+                name=mongos_name,
+                config_svr_replicaset=config_svr_replicaset
+            )
 
-        mongos = Mongos(
-            port=mongos_port,
-            hostname=f"mongodb://{self.config.name}-mongos:{mongos_port}",
-            name=f"{self.config.name}-mongos",
-            _type="mongos",
-            container=mongos_container
-        )
-        mongos.container_id = mongos_container.short_id
+            mongos = Mongos(
+                port=mongos_port,
+                hostname=f"mongodb://{mongos_name}:{mongos_port}",
+                name=mongos_name,
+                _type="mongos",
+                container=mongos_container
+            )
+            mongos.container_id = mongos_container.short_id
+            self.wait_for_mongod_readiness(mongod=mongos)
+            sharded_cluster.routers.append(mongos)
+            last_mongos_port = mongos_port
 
-        self.wait_for_mongod_readiness(mongod=mongos)
-        sharded_cluster.routers = [mongos]
         sharded_cluster.shards = []
         for s in range(self.config.shards):
             shard_id = s + 1
@@ -186,7 +198,7 @@ tomodo describe --name {self.config.name}
                 Shard(
                     shard_id=shard_id,
                     name=f"{self.config.name}-sh-{shard_id}",
-                    start_port=mongos_port + (s * self.config.replicas) + 1,
+                    start_port=last_mongos_port + (s * self.config.replicas) + 1,
                     size=self.config.replicas
                 )
             )
@@ -199,7 +211,7 @@ tomodo describe --name {self.config.name}
                 f"sh.addShard('{shard_host}')"
             )
         for cmd in shard_init_commands:
-            run_mongo_shell_command(mongo_cmd=cmd, mongod=mongos)
+            run_mongo_shell_command(mongo_cmd=cmd, mongod=sharded_cluster.routers[0])
         return sharded_cluster
 
     def provision_shard(self, start_port: int) -> None:

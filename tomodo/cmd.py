@@ -122,7 +122,8 @@ def provision(
         ),
         mongos: int = typer.Option(
             default=1,
-            help="The number of mongos routers (currently ignored)"
+            min=1,
+            help="The number of mongos routers"
         ),
         auth: bool = typer.Option(
             default=False,
