@@ -40,6 +40,7 @@ class Mongod(Deployment):
     container_data_dir: str = None
     container_count = 1
     deployment_type: str = "mongod"
+    is_arbiter: bool = False
 
     def __init__(self,
                  port: int,
@@ -52,7 +53,8 @@ class Mongod(Deployment):
                  container_data_dir: str = None,
                  container: Container = None,
                  deployment_type: str = "mongod",
-                 mongo_version: str = None):
+                 mongo_version: str = None,
+                 is_arbiter: bool = False):
         self.port = port
         self.hostname = hostname
         self.name = name
@@ -64,6 +66,7 @@ class Mongod(Deployment):
         self.container = container
         self.deployment_type = deployment_type
         self.mongo_version = mongo_version
+        self.is_arbiter = is_arbiter
 
     @property
     def labels(self):
@@ -106,6 +109,7 @@ class Mongod(Deployment):
             "port": self.port,
             "host_data_dir": self.host_data_dir,
             "container_data_dir": self.container_data_dir,
+            "is_arbiter": self.is_arbiter,
             "container": {
                 "id": self.container.short_id,
                 "image": str(self.container.image),

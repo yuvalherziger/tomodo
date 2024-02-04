@@ -15,7 +15,7 @@ from ruamel.yaml import YAML
 from tomodo import TOMODO_VERSION
 from tomodo.common.cleaner import Cleaner
 from tomodo.common.config import ProvisionerConfig
-from tomodo.common.errors import EmptyDeployment
+from tomodo.common.errors import EmptyDeployment, TomodoError
 from tomodo.common.models import Deployment
 from tomodo.common.provisioner import Provisioner
 from tomodo.common.reader import Reader
@@ -48,6 +48,13 @@ class OutputFormat(str, Enum):
     YAML = "yaml"
 
 
+class Replicas(str, Enum):
+    ONE = 1
+    THREE = 3
+    FIVE = 5
+    SEVEN = 7
+
+
 def check_docker():
     if not is_docker_running():
         logger.error("The Docker daemon isn't running")
@@ -68,7 +75,8 @@ def version():
 
 @cli.command(
     help="Provision a MongoDB deployment",
-    no_args_is_help=True)
+    no_args_is_help=True
+)
 def provision(
         standalone: bool = typer.Option(
             default=False,
@@ -82,8 +90,8 @@ def provision(
             default=False,
             help="Provision a MongoDB sharded cluster"
         ),
-        replicas: int = typer.Option(
-            default=3,
+        replicas: Replicas = typer.Option(
+            default=Replicas.THREE.value,
             help="The number of replica set nodes to provision"
         ),
         shards: int = typer.Option(
@@ -92,7 +100,7 @@ def provision(
         ),
         arbiter: bool = typer.Option(
             default=False,
-            help="Arbiter node (currently ignored)"
+            help="Add an arbiter node to a replica set"
         ),
         name: str = typer.Option(
             default=None,
@@ -139,7 +147,7 @@ def provision(
         ),
         image_repo: str = typer.Option(
             default="mongo",
-            help=""
+            help="The MongoDB image name/repo"
         ),
         image_tag: str = typer.Option(
             default="latest",
@@ -153,7 +161,7 @@ def provision(
 ):
     check_docker()
     config = ProvisionerConfig(
-        standalone=standalone, replica_set=replica_set, replicas=replicas, shards=shards,
+        standalone=standalone, replica_set=replica_set, replicas=int(replicas.value), shards=shards,
         arbiter=arbiter, name=name, priority=priority,
         sharded=sharded, port=port, config_servers=config_servers, mongos=mongos,
         auth=auth, username=username, password=password, auth_db=auth_db,
@@ -162,7 +170,10 @@ def provision(
     )
     provisioner = Provisioner(config=config)
     try:
-        provisioner.provision()
+        provisioner.provision(deployment_getter=Reader().get_deployment_by_name)
+    except TomodoError as e:
+        logger.error(str(e))
+        exit(1)
     except Exception as e:
         logger.exception("Could not provision your deployment - an error has occurred")
         exit(1)
@@ -205,6 +216,10 @@ def describe(
                 console.print(markdown)
         except EmptyDeployment:
             logger.error("A deployment named '%s' doesn't exist", name)
+            exit(1)
+        except TomodoError as e:
+            logger.error(str(e))
+            exit(1)
         except Exception as e:
             logger.exception("Could not describe your deployment - an error has occurred")
             exit(1)
@@ -224,6 +239,9 @@ def describe(
                 for description in reader.describe_all(include_stopped=exclude_stopped):
                     markdown = Markdown(description)
                     console.print(markdown)
+        except TomodoError as e:
+            logger.error(str(e))
+            exit(1)
         except Exception as e:
             logger.exception("Could not describe your deployments - an error has occurred")
             exit(1)
@@ -257,6 +275,10 @@ def stop(
             pass
         except EmptyDeployment:
             logger.error("A deployment named '%s' doesn't exist", name)
+            exit(1)
+        except TomodoError as e:
+            logger.error(str(e))
+            exit(1)
         except Exception as e:
             logger.exception("Could not stop your deployment - an error has occurred")
             exit(1)
@@ -271,6 +293,9 @@ def stop(
                     raise typer.Abort()
         except typer.Abort:
             pass
+        except TomodoError as e:
+            logger.error(str(e))
+            exit(1)
         except Exception as e:
             logger.exception("Could not stop your deployments - an error has occurred")
             exit(1)
@@ -291,6 +316,10 @@ def start(
             starter.start_deployment(name)
         except EmptyDeployment:
             logger.error("A deployment named '%s' doesn't exist", name)
+            exit(1)
+        except TomodoError as e:
+            logger.error(str(e))
+            exit(1)
     else:
         raise NotImplementedError
 
@@ -323,6 +352,9 @@ def remove(
             pass
         except EmptyDeployment:
             logger.error("A deployment named '%s' doesn't exist", name)
+        except TomodoError as e:
+            logger.error(str(e))
+            exit(1)
         except Exception as e:
             logger.exception("Could not remove your deployment - an error has occurred")
             exit(1)
@@ -337,6 +369,9 @@ def remove(
                     raise typer.Abort()
         except typer.Abort:
             pass
+        except TomodoError as e:
+            logger.error(str(e))
+            exit(1)
         except Exception as e:
             logger.exception("Could not remove your deployments - an error has occurred")
             exit(1)
@@ -373,6 +408,9 @@ def list_(
                 reader.list_deployments_in_markdown_table(deployments, include_stopped=not exclude_stopped),
             )
             console.print(markdown)
+    except TomodoError as e:
+        logger.error(str(e))
+        exit(1)
     except Exception as e:
         logger.exception("Could not list your deployments - an error has occurred")
         exit(1)

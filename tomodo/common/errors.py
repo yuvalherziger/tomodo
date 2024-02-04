@@ -1,19 +1,27 @@
-class EmptyDeployment(Exception):
+class TomodoError(Exception):
     pass
 
 
-class InvalidDeploymentType(Exception):
+class EmptyDeployment(TomodoError):
+    pass
+
+
+class DeploymentNameCollision(TomodoError):
+    pass
+
+
+class InvalidDeploymentType(TomodoError):
     def __init__(self, deployment_type: str = None):
         self.deployment_type = deployment_type
 
 
-class InvalidConfiguration(Exception):
+class InvalidConfiguration(TomodoError):
     pass
 
 
-class PortsTakenException(Exception):
+class PortsTakenException(TomodoError):
     pass
 
 
-class InvalidShellException(Exception):
+class InvalidShellException(TomodoError):
     pass

@@ -84,9 +84,8 @@ class Cleaner:
             logger.info("Container %s isn't running", container_id)
 
     def _delete_container(self, container_id: str, data_path: str = None):
-        self._stop_container(container_id)
         container: Container = self.docker_client.containers.get(container_id)
-        container.remove()
+        container.remove(force=True)
         if data_path is not None:
             logger.info("The following data directory will be deleted: '%s'", data_path)
             if os.path.exists(data_path):

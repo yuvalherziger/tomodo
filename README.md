@@ -3,6 +3,9 @@
 
 ![Latest Release](https://img.shields.io/github/v/release/yuviherziger/tomodo?display_name=release&style=flat&color=%2332c955)
 ![Unit Tests](https://github.com/yuviherziger/tomodo/actions/workflows/unit-tests.yml/badge.svg)
+![Python Version](https://img.shields.io/pypi/pyversions/tomodo)
+![License](https://img.shields.io/github/license/yuviherziger/tomodo)
+
 </div>
 
 # tomodo

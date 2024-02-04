@@ -15,7 +15,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 
 from tomodo.common.config import ProvisionerConfig
-from tomodo.common.errors import InvalidConfiguration, PortsTakenException
+from tomodo.common.errors import InvalidConfiguration, PortsTakenException, EmptyDeployment, DeploymentNameCollision
 from tomodo.common.models import Mongod, ReplicaSet, ShardedCluster, Mongos, Shard, ConfigServer, Deployment
 from tomodo.common.util import (
     is_port_range_available, with_retry, run_mongo_shell_command
@@ -49,10 +49,19 @@ class Provisioner:
         except docker.errors.APIError as e:
             raise
 
-    def provision(self) -> Deployment:
+    def provision(self, deployment_getter: callable) -> Deployment:
         if sum([self.config.standalone, self.config.replica_set, self.config.sharded]) != 1:
             logger.error("Exactly one of the following has to be specified: standalone, replica-set, or sharded")
             raise InvalidConfiguration
+        if self.config.standalone and self.config.arbiter:
+            logger.error("Arbiter nodes are supported only in replica sets and sharded clusters")
+            raise InvalidConfiguration
+
+        try:
+            _ = deployment_getter(self.config.name)
+            raise DeploymentNameCollision(f"The deployment {self.config.name} already exists")
+        except EmptyDeployment:
+            pass
         self.check_and_pull_image(f"{self.config.image_repo}:{self.config.image_tag}")
         self.network = self.get_network()
         deployment: Deployment = Deployment()
@@ -66,7 +75,7 @@ class Provisioner:
         elif self.config.replica_set:
             deployment: ReplicaSet = ReplicaSet(name=self.config.name, start_port=self.config.port,
                                                 size=self.config.replicas)
-            deployment = self.provision_replica_set(replicaset=deployment)
+            deployment = self.provision_replica_set(replicaset=deployment, arbiter=self.config.arbiter)
         elif self.config.sharded:
             deployment: ShardedCluster = self.provision_sharded_cluster()
         self.print_deployment_summary(deployment=deployment)
@@ -209,9 +218,9 @@ tomodo describe --name {self.config.name}
         pass
 
     def provision_replica_set(self, replicaset: ReplicaSet, config_svr: bool = False, sh_cluster: bool = False,
-                              shard_id: int = 0) -> ReplicaSet:
-        # if self.config.arbiter:
-        #     logger.info("An arbiter node will also be configured")
+                              shard_id: int = 0, arbiter: bool = False) -> ReplicaSet:
+        if arbiter:
+            logger.info("An arbiter node will also be provisioned")
         start_port = replicaset.start_port
         ports = range(start_port, start_port + replicaset.size)
         members: List[Mongod] = []
@@ -222,7 +231,8 @@ tomodo describe --name {self.config.name}
                     port=port,
                     hostname=f"mongodb://{replicaset.name}-{idx}:{port}",
                     name=f"{replicaset.name}-{idx}",
-                    deployment_type="Sharded Cluster" if shard_id or config_svr else "Replica Set"
+                    deployment_type="Sharded Cluster" if shard_id or config_svr else "Replica Set",
+                    is_arbiter=arbiter and idx == len(list(ports))
                 )
             )
 
@@ -237,7 +247,8 @@ tomodo describe --name {self.config.name}
                 replset_name=replicaset.name,
                 config_svr=config_svr,
                 sh_cluster=sh_cluster,
-                shard_id=shard_id
+                shard_id=shard_id,
+                arbiter=member.is_arbiter
             )
             member.container_id = container.short_id
             member.host_data_dir = host_data_dir
@@ -245,7 +256,7 @@ tomodo describe --name {self.config.name}
             logger.info("MongoDB container created [id: %s]", member.container_id)
 
         self.wait_for_mongod_readiness(mongod=replicaset.members[0])
-        self.init_replica_set(replicaset)
+        self.init_replica_set(replicaset, arbiter=self.config.arbiter)
         return replicaset
 
     def provision_standalone_instance(self, mongod: Mongod) -> Mongod:
@@ -264,11 +275,20 @@ tomodo describe --name {self.config.name}
         self.wait_for_mongod_readiness(mongod=mongod)
         return mongod
 
-    def init_replica_set(self, replicaset: ReplicaSet) -> None:
-        init_scripts = ["rs.initiate()"]
+    def init_replica_set(self, replicaset: ReplicaSet, arbiter: bool = False) -> None:
+        init_scripts: List[str] = ["rs.initiate()"]
+        if arbiter:
+            rc = self.config.replicas // 2
+            init_scripts.append(
+                "db.adminCommand({ setDefaultRWConcern: 1, defaultWriteConcern: { 'w': %s } })" % str(rc)
+            )
         for m in replicaset.members[1:len(replicaset.members)]:
             self.wait_for_mongod_readiness(mongod=m)
-            init_scripts.append(f"rs.add('{m.name}:{m.port}')")
+            if m.is_arbiter:
+                init_scripts.append(f"rs.addArb('{m.name}:{m.port}')")
+            else:
+                init_scripts.append(f"rs.add('{m.name}:{m.port}')")
+
         first_mongod = replicaset.members[0]
         for script in init_scripts:
             run_mongo_shell_command(mongo_cmd=script, mongod=first_mongod, config=self.config)
@@ -327,7 +347,8 @@ tomodo describe --name {self.config.name}
         )
 
     def create_mongod_container(self, port: int, name: str, replset_name: str = None,
-                                config_svr: bool = False, sh_cluster: bool = False, shard_id: int = 0) -> Container:
+                                config_svr: bool = False, sh_cluster: bool = False, shard_id: int = 0,
+                                arbiter: bool = False) -> Container:
         data_dir_name = f"data/{name}-db"
         data_dir_path = os.path.join(f"{DATA_FOLDER}", data_dir_name)
         os.makedirs(data_dir_path, exist_ok=True)
@@ -404,6 +425,7 @@ tomodo describe --name {self.config.name}
                 "tomodo-container-data-dir": container_path,
                 "tomodo-shard-id": str(shard_id),
                 "tomodo-shard-count": str(self.config.shards or 0),
+                "tomodo-arbiter": str(int(arbiter))
             }
         ), host_path, container_path
 
