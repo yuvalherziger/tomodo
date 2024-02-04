@@ -40,6 +40,7 @@ class Mongod(Deployment):
     container_data_dir: str = None
     container_count = 1
     deployment_type: str = "mongod"
+    is_arbiter: bool = False
 
     def __init__(self,
                  port: int,
@@ -52,7 +53,8 @@ class Mongod(Deployment):
                  container_data_dir: str = None,
                  container: Container = None,
                  deployment_type: str = "mongod",
-                 mongo_version: str = None):
+                 mongo_version: str = None,
+                 is_arbiter: bool = False):
         self.port = port
         self.hostname = hostname
         self.name = name
@@ -64,6 +66,7 @@ class Mongod(Deployment):
         self.container = container
         self.deployment_type = deployment_type
         self.mongo_version = mongo_version
+        self.is_arbiter = is_arbiter
 
     @property
     def labels(self):
@@ -106,6 +109,7 @@ class Mongod(Deployment):
             "port": self.port,
             "host_data_dir": self.host_data_dir,
             "container_data_dir": self.container_data_dir,
+            "is_arbiter": self.is_arbiter,
             "container": {
                 "id": self.container.short_id,
                 "image": str(self.container.image),
@@ -130,12 +134,14 @@ class ReplicaSet(Deployment):
     container_count: int = 3
     deployment_type: str = "Replica Set"
 
-    def __init__(self, name: str = None, start_port: int = None, members: List[Mongod] = None, size: int = 3):
+    def __init__(self, name: str = None, start_port: int = None, members: List[Mongod] = None, size: int = 3,
+                 deployment_type: str = "Replica Set"):
         self.members = members
         self.name = name
         self.start_port = start_port
         self.size = size
         self.container_count = size
+        self.deployment_type = deployment_type
 
     @property
     def hostname(self) -> str:

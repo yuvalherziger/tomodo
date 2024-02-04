@@ -85,6 +85,7 @@ def marshal_replica_set(components: List[Dict]) -> ReplicaSet:
             container_id=component.get("tomodo-container-id"),
             host_data_dir=component.get("tomodo-data-dir"),
             container_data_dir=component.get("tomodo-container-data-dir"),
+            is_arbiter=component.get("tomodo-arbiter") == "1",
             container=container,
             mongo_version=_read_mongo_version_from_container(container)
         )
@@ -124,6 +125,7 @@ def marshal_standalone_instance(component: Dict) -> Mongod:
         container_id=component.get("tomodo-container-id"),
         host_data_dir=component.get("tomodo-data-dir"),
         container_data_dir=component.get("tomodo-container-data-dir"),
+        is_arbiter=component.get("tomodo-arbiter") == "1",
         container=container
     )
     mongod.mongo_version = mongo_version
@@ -151,6 +153,7 @@ def marshal_sharded_cluster(components: List[Dict]) -> ShardedCluster:
             container_id=component.get("tomodo-container-id"),
             host_data_dir=component.get("tomodo-data-dir"),
             container_data_dir=component.get("tomodo-container-data-dir"),
+            is_arbiter=component.get("tomodo-arbiter") == "1",
             container=container
         )
         mongod.last_known_state = container.status
@@ -202,6 +205,7 @@ def marshal_sharded_cluster(components: List[Dict]) -> ShardedCluster:
                 host_data_dir=component.get("tomodo-data-dir"),
                 container_data_dir=component.get("tomodo-container-data-dir"),
                 deployment_type="mongod",
+                is_arbiter=component.get("tomodo-arbiter", "0") == "1",
                 container=container,
             )
             mongod.last_known_state = container.status
