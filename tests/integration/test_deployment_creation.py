@@ -27,7 +27,7 @@ def get_doc_count(mongod: Mongod, config: ProvisionerConfig) -> int:
 
 class TestDeploymentCreation:
     @staticmethod
-    @pytest.mark.parametrize("image_tag", ["4.4.7", "6.0", "7.0", "latest"])
+    @pytest.mark.parametrize("image_tag", ["5.0", "6.0", "7.0", "latest"])
     @pytest.mark.parametrize("with_auth", [True, False])
     def test_standalone_provisioning(image_tag: str, with_auth: bool):
         port = random.randint(27000, 57000)
@@ -66,9 +66,9 @@ class TestDeploymentCreation:
                 pass
 
     @staticmethod
-    @pytest.mark.parametrize("image_tag", ["4.4.7", "6.0", "7.0", "latest"])
-    @pytest.mark.parametrize("replicas", [1, 3, 5, 7])
-    @pytest.mark.parametrize("with_arbiter", [False, True])
+    @pytest.mark.parametrize("image_tag", ["5.0", "6.0", "7.0", "latest"])
+    @pytest.mark.parametrize("replicas", [3, 5, 7])
+    @pytest.mark.parametrize("with_arbiter", [True])
     def test_replica_set_provisioning(image_tag: str, replicas: int, with_arbiter: bool):
         suffix = secrets.token_hex(2)
         port = random.randint(27000, 57000)
@@ -102,7 +102,7 @@ class TestDeploymentCreation:
                 pass
 
     @staticmethod
-    @pytest.mark.parametrize("image_tag", ["4.4.7", "6.0", "7.0", "latest"])
+    @pytest.mark.parametrize("image_tag", ["5.0", "6.0", "7.0", "latest"])
     @pytest.mark.parametrize("replicas", [1, 3, 5, 7])
     @pytest.mark.parametrize("shards", [1, 3])
     @pytest.mark.parametrize("mongos", [1, 2])

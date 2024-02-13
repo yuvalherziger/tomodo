@@ -1,15 +1,15 @@
-name: Integration Tests
+name: Unit Tests
 
 on:
   pull_request:
     branches:
-      - '*'
+      - 'main'
   push:
     branches:
       - 'main'
 
 jobs:
-  test:
+  unit-tests:
     runs-on: ubuntu-latest
 
     steps:
@@ -21,9 +21,14 @@ jobs:
         with:
           python-version: 3.8
 
+      - name: Run image
+        uses: abatilo/actions-poetry@v2.3.0
+        with:
+          poetry-version: 1.5.1
+
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: poetry install
 
       - name: Run Unit Tests
         run: |
-          python -m pytest tests/unit --verbose
+          poetry run pytest tests/integration --verbose
