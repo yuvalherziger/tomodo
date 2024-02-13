@@ -60,11 +60,11 @@ def marshal_deployment(components: List[Dict]) -> Deployment:
     deployment_type = transform_deployment_type(components[0].get("tomodo-type"))
 
     if deployment_type == "Replica Set":
-        return marshal_replica_set(components)
+        return ReplicaSet.from_container_details(details=components)
     elif deployment_type == "Sharded Cluster":
         return marshal_sharded_cluster(components)
     elif deployment_type == "Standalone":
-        return marshal_standalone_instance(component=components[0])
+        return Mongod.from_container_details(details=components[0])
     else:
         raise InvalidDeploymentType(deployment_type)
 
@@ -249,6 +249,21 @@ def _read_mongo_version_from_container(container: Container) -> str:
     )
 
 
+def _extract_details_from_containers(containers) -> List[Dict]:
+    container_details = []
+    for container in containers:
+        mongo_version = _read_mongo_version_from_container(container)
+        container_details.append({
+            **container.labels,
+            "tomodo-container-id": container.short_id,
+            "tomodo-container-status": container.status,
+            "tomodo-mongo-version": mongo_version,
+            "tomodo-type": container.labels.get("tomodo-type", "Standalone"),
+            "tomodo-container": container,
+        })
+    return container_details
+
+
 class Reader:
     def __init__(self):
         self.docker_client = docker.from_env()
@@ -275,26 +290,12 @@ class Reader:
         deployment: Deployment = self.get_deployment_by_name(name, include_stopped=include_stopped)
         return deployment.as_markdown_table()
 
-    def _extract_details_from_containers(self, containers) -> List[Dict]:
-        container_details = []
-        for container in containers:
-            mongo_version = _read_mongo_version_from_container(container)
-            container_details.append({
-                **container.labels,
-                "tomodo-container-id": container.short_id,
-                "tomodo-container-status": container.status,
-                "tomodo-mongo-version": mongo_version,
-                "tomodo-type": container.labels.get("tomodo-type", "Standalone"),
-                "tomodo-container": container,
-            })
-        return container_details
-
     def _get_containers(self, name: str = None, include_stopped: bool = False) -> List[Dict]:
         container_filters = {"label": f"{SOURCE_KEY}={SOURCE_VALUE}"}
         if name:
             container_filters = {"label": f"tomodo-group={name}"}
         containers = self.docker_client.containers.list(filters=container_filters, all=include_stopped)
-        return self._extract_details_from_containers(containers=containers)
+        return _extract_details_from_containers(containers=containers)
 
     def get_all_deployments(self, include_stopped: bool = False) -> Dict[str, Deployment]:
         container_details = self._get_containers(include_stopped=include_stopped)

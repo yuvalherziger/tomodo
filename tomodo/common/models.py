@@ -92,7 +92,7 @@ class Mongod(Deployment):
             str(self.port),
             "mongod",
             f"{self.name}:{self.port}",
-            self.container_id or "N\A"
+            self.container_id or "N/A"
         ]
         rows.append("| " + "|".join(cells) + " |")
         return "\n".join(rows)
@@ -116,6 +116,24 @@ class Mongod(Deployment):
                 "ports": self.container.ports,
             }
         }
+
+    @staticmethod
+    def from_container_details(details: Dict) -> "Mongod":
+        container: Container = details.get("tomodo-container")
+        mongo_version = details.get("tomodo-mongo-version")
+        mongod = Mongod(
+            port=int(details.get("tomodo-port", 0)),
+            hostname=details.get("tomodo-name"),
+            name=details.get("tomodo-name"),
+            container_id=container.short_id,
+            host_data_dir=details.get("tomodo-data-dir"),
+            container_data_dir=details.get("tomodo-container-data-dir"),
+            is_arbiter=details.get("tomodo-arbiter") == "1",
+            container=container
+        )
+        mongod.mongo_version = mongo_version
+        mongod.last_known_state = "running" if container.status == "running" else "stopped"
+        return mongod
 
 
 class Mongos(Mongod):
@@ -170,7 +188,7 @@ class ReplicaSet(Deployment):
                 str(member.port),
                 member.type,
                 f"{member.name}:{member.port}",
-                member.container_id or "N\A"
+                member.container_id or "N/A"
             ]
             rows.append("| " + "|".join(cells) + " |")
         return "\n".join(rows)
@@ -190,6 +208,53 @@ class ReplicaSet(Deployment):
                 member.as_dict(detailed=True) for member in self.members
             ]
         }
+
+    @staticmethod
+    def from_container_details(details: List[Dict]) -> "ReplicaSet":
+        name = details[0].get("tomodo-group")
+        mongo_version = details[0].get("tomodo-mongo-version")
+        sorted_components = sorted(details, key=lambda c: int(c.get("tomodo-port")))
+        stopped_containers = 0
+        running_containers = 0
+        members = []
+        for component in sorted_components:
+            container: Container = component.get("tomodo-container")
+            mongod = Mongod(
+                port=int(component.get("tomodo-port", 0)),
+                hostname=component.get("tomodo-name"),
+                name=component.get("tomodo-name"),
+                container_id=component.get("tomodo-container-id"),
+                host_data_dir=component.get("tomodo-data-dir"),
+                container_data_dir=component.get("tomodo-container-data-dir"),
+                is_arbiter=component.get("tomodo-arbiter") == "1",
+                container=container,
+                mongo_version=next(
+                    (
+                        var.split("=")[1] for var in container.attrs.get("Config", {}).get("Env", []) if
+                        var.startswith("MONGO_VERSION=")
+                    ),
+                    None
+                )
+            )
+            mongod.last_known_state = container.status
+            members.append(mongod)
+
+            if container.status == "running":
+                running_containers += 1
+            else:
+                stopped_containers += 1
+        replica_set = ReplicaSet(
+            members=members,
+            name=name,
+            start_port=members[0].port,
+            size=len(members)
+        )
+        if running_containers > 0:
+            replica_set.last_known_state = "running"
+        else:
+            replica_set.last_known_state = "stopped"
+        replica_set.mongo_version = mongo_version
+        return replica_set
 
 
 class Shard(ReplicaSet):
