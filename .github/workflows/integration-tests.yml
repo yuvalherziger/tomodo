@@ -1,4 +1,4 @@
-name: Unit Tests
+name: Integration Tests
 
 on:
   pull_request:
@@ -9,7 +9,7 @@ on:
       - 'main'
 
 jobs:
-  unit-tests:
+  integration-tests:
     runs-on: ubuntu-latest
 
     steps:
