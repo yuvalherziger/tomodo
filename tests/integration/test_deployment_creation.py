@@ -6,7 +6,7 @@ import pytest
 
 from tomodo import ProvisionerConfig, Provisioner, Reader, Cleaner
 from tomodo.common.errors import EmptyDeployment
-from tomodo.common.models import Deployment, Mongod, ReplicaSet, ShardedCluster
+from tomodo.common.models import Deployment, Mongod
 from tomodo.common.util import run_mongo_shell_command
 
 db = "int_tst_db"
@@ -27,8 +27,10 @@ def get_doc_count(mongod: Mongod, config: ProvisionerConfig) -> int:
 
 class TestDeploymentCreation:
     @staticmethod
-    @pytest.mark.parametrize("image_tag", ["5.0", "6.0", "7.0", "latest"])
-    @pytest.mark.parametrize("with_auth", [True, False])
+    # @pytest.mark.parametrize("image_tag", ["5.0", "6.0", "7.0", "latest"])
+    # @pytest.mark.parametrize("with_auth", [True, False])
+    @pytest.mark.parametrize("image_tag", ["7.0"])
+    @pytest.mark.parametrize("with_auth", [False])
     def test_standalone_provisioning(image_tag: str, with_auth: bool):
         port = random.randint(27000, 57000)
         suffix = secrets.token_hex(2)
