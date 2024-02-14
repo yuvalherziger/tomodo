@@ -14,7 +14,7 @@ class ProvisionerConfig:
                  arbiter: bool = False, name: str = None, priority: bool = False,
                  sharded: bool = False, port: int = 27017, config_servers: int = 1, mongos: int = 1,
                  auth: bool = False, username: str = None, password: str = None, auth_db: str = "admin",
-                 auth_roles: List[str] = None, image_repo: str = "mongo", image_tag: str = "7.0",
+                 auth_roles: List[str] = None, image_repo: str = "mongo", image_tag: str = "latest",
                  network_name: str = "mongo_network"):
         self.standalone = standalone
         self.replica_set = replica_set

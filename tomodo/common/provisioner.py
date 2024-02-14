@@ -214,9 +214,6 @@ tomodo describe --name {self.config.name}
             run_mongo_shell_command(mongo_cmd=cmd, mongod=sharded_cluster.routers[0])
         return sharded_cluster
 
-    def provision_shard(self, start_port: int) -> None:
-        pass
-
     def provision_replica_set(self, replicaset: ReplicaSet, config_svr: bool = False, sh_cluster: bool = False,
                               shard_id: int = 0, arbiter: bool = False) -> ReplicaSet:
         if arbiter:
@@ -246,7 +243,6 @@ tomodo describe --name {self.config.name}
                 name=member.name,
                 replset_name=replicaset.name,
                 config_svr=config_svr,
-                sh_cluster=sh_cluster,
                 shard_id=shard_id,
                 arbiter=member.is_arbiter
             )
@@ -330,7 +326,6 @@ tomodo describe --name {self.config.name}
             ports={f"{port}/tcp": port},
             platform=f"linux/{platform.machine()}",
             network=self.network.id,
-            # user=1000,
             hostname=name,
             name=name,
             command=command,
@@ -407,7 +402,6 @@ tomodo describe --name {self.config.name}
             ports={f"{port}/tcp": port},
             platform=f"linux/{platform.machine()}",
             network=self.network.id,
-            # user=1000,
             hostname=name,
             name=name,
             command=command,
