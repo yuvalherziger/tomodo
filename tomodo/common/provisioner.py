@@ -263,6 +263,7 @@ tomodo describe --name {self.config.name}
             port=mongod.port,
             name=mongod.name
         )
+        self.wait_for_container_readiness(container_id=container.short_id)
         logs = self.docker_client.containers.get(container.short_id).logs().decode('utf-8')
         print("############################################")
         print(container.status)
@@ -294,6 +295,12 @@ tomodo describe --name {self.config.name}
         first_mongod = replicaset.members[0]
         for script in init_scripts:
             run_mongo_shell_command(mongo_cmd=script, mongod=first_mongod, config=self.config)
+
+    @with_retry(max_attempts=10, delay=5, retryable_exc=(APIError, Exception))
+    def wait_for_container_readiness(self, container_id: str) -> None:
+        status = self.docker_client.containers.get(container_id).status
+        if status != "running":
+            raise Exception("Container still not running")
 
     @with_retry(max_attempts=10, delay=5, retryable_exc=(APIError, Exception))
     def wait_for_mongod_readiness(self, mongod: Mongod):
