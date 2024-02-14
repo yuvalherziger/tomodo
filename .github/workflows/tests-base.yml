@@ -6,6 +6,9 @@ on:
       test_type:
         required: true
         type: string
+      codecov_token:
+        required: false
+        type: string
 
 jobs:
   integration-tests:
@@ -45,4 +48,11 @@ jobs:
       - name: Run Integration Tests
         if: ${{ inputs.test_type == 'integration' }}
         run: |
-          poetry run pytest tests/integration --verbose
+          poetry run pytest tests/integration --cov ./tomodo --cov-report=xml
+
+      - name: Upload coverage reports to Codecov
+        if: ${{ inputs.test_type == 'integration' }}
+        uses: codecov/codecov-action@v4.0.1
+        env:
+          token: ${{ inputs.codecov_token }}
+          slug: yuviherziger/tomodo

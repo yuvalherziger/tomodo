@@ -13,3 +13,4 @@ jobs:
     uses: ./.github/workflows/tests-base.yml
     with:
       test_type: unit
+      codecov_token: ${{ secrets.CODECOV_TOKEN }}
