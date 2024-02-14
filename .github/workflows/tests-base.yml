@@ -23,7 +23,7 @@ jobs:
         with:
           python-version: 3.8
 
-      - name: Run image
+      - name: Set up Poetry
         uses: abatilo/actions-poetry@v2.3.0
         with:
           poetry-version: 1.5.1

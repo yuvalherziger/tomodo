@@ -263,6 +263,8 @@ tomodo describe --name {self.config.name}
             port=mongod.port,
             name=mongod.name
         )
+
+        raise Exception(self.docker_client.containers.get(str(container.short_id.logs().decode('utf-8'))))
         mongod.container = container
         mongod.container_id = container.short_id
         mongod.host_data_dir = host_data_dir
