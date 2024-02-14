@@ -3,7 +3,7 @@
 
 ![Latest Release](https://img.shields.io/github/v/release/yuviherziger/tomodo?display_name=release&style=flat&color=%2332c955)
 ![Unit Tests](https://github.com/yuviherziger/tomodo/actions/workflows/unit-tests.yml/badge.svg)
-![Integration Tests](https://github.com/yuviherziger/tomodo/actions/workflows/integration-tests.yml/badge.svg)
+[![codecov](https://codecov.io/gh/yuviherziger/tomodo/graph/badge.svg?token=3CE8D8NAAY)](https://codecov.io/gh/yuviherziger/tomodo)
 ![Python Version](https://img.shields.io/pypi/pyversions/tomodo)
 ![License](https://img.shields.io/github/license/yuviherziger/tomodo)
 
