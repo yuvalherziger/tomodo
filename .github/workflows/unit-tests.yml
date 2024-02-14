@@ -9,8 +9,10 @@ on:
       - 'main'
 
 jobs:
-  integration-tests:
+  unit-tests:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
 
     steps:
       - name: Checkout code
@@ -38,6 +40,8 @@ jobs:
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v4.0.1
+        with:
+          file: ./coverage.xml
         env:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: yuviherziger/tomodo
