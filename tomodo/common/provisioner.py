@@ -264,6 +264,8 @@ tomodo describe --name {self.config.name}
             name=mongod.name
         )
         logs = self.docker_client.containers.get(container.short_id).logs().decode('utf-8')
+        print("############################################")
+        print(logs)
         raise Exception(str(logs))
         mongod.container = container
         mongod.container_id = container.short_id
