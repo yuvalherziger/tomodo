@@ -144,6 +144,9 @@ class TestReader:
         ]
         reader = Reader()
         deployment = reader.get_deployment_by_name(depl_name)
-        assert isinstance(deployment, ReplicaSet)
-        assert deployment.mongo_version == mongo_version
-        assert deployment.last_known_state == "running"
+        assert isinstance(deployment, ReplicaSet), "Not a replica set"
+        member_count = len(deployment.members)
+        assert deployment.mongo_version == mongo_version, "Unexpected mongo version"
+        assert deployment.last_known_state == "running", "Unexpected state"
+        assert deployment.start_port == 27017, "Unexpected start port"
+        assert member_count == replicas, "Unexpected replica count"

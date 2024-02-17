@@ -252,7 +252,6 @@ def _read_mongo_version_from_container(container: Container) -> str:
 def _extract_details_from_containers(containers) -> List[Dict]:
     container_details = []
     for container in containers:
-        print(container.labels)
         mongo_version = _read_mongo_version_from_container(container)
         container_details.append({
             **container.labels,
