@@ -3,7 +3,7 @@ from unittest.mock import Mock
 
 from docker.models.containers import Container
 
-from tomodo.common.models import Mongod, ReplicaSet
+from tomodo.common.models import Mongod, ReplicaSet, ShardedCluster
 from tomodo.common.reader import marshal_deployment, split_into_chunks, Reader
 
 
@@ -150,3 +150,99 @@ class TestReader:
         assert deployment.last_known_state == "running", "Unexpected state"
         assert deployment.start_port == 27017, "Unexpected start port"
         assert member_count == replicas, "Unexpected replica count"
+
+    @staticmethod
+    def test_get_deployment_by_name_sharded_cluster(reader_client: Mock):
+        depl_name = "unit-test"
+        mongo_version = "5.0.0"
+        mongos = 2
+        shards = 3
+        replicas = 3
+        config_servers = 3
+        cfg_start_port = 2000
+        mongos_start_port = cfg_start_port + config_servers
+        shards_start_port = mongos_start_port + mongos
+
+        config_server_containers = [
+            Container(
+                attrs={
+                    "Name": f"{depl_name}-cfg-svr-{i}",
+                    "Id": "container_id",
+                    "State": "running",
+                    "Config": {
+                        "Labels": {
+                            "source": "tomodo", "tomodo-arbiter": "0",
+                            "tomodo-container-data-dir": f"/data/{depl_name}-cfg-svr-{i}",
+                            "tomodo-data-dir": f"/var/tmp/tomodo/data/{depl_name}-cfg-svr-{i}",
+                            "tomodo-group": depl_name,
+                            "tomodo-name": f"{depl_name}-cfg-svr-{i}", "tomodo-port": cfg_start_port + i - 1,
+                            "tomodo-role": "cfg-svr",
+                            "tomodo-shard-count": str(shards), "tomodo-shard-id": "0", "tomodo-type": "Sharded Cluster"
+                        },
+                        "Env": [f"MONGO_VERSION={mongo_version}"]
+                    }
+                }
+            )
+            for i in range(1, config_servers + 1)
+        ]
+
+        mongos_containers = [
+            Container(
+                attrs={
+                    "Name": f"{depl_name}-mongos-{i}",
+                    "Id": "container_id",
+                    "State": "running",
+                    "Config": {
+                        "Labels": {
+                            "source": "tomodo",
+                            "tomodo-group": depl_name,
+                            "tomodo-name": f"{depl_name}-mongos-{i}", "tomodo-port": mongos_start_port + i - 1,
+                            "tomodo-role": "mongos",
+                            "tomodo-shard-count": str(shards), "tomodo-shard-id": "0", "tomodo-type": "Sharded Cluster"
+                        },
+                        "Env": [f"MONGO_VERSION={mongo_version}"]
+                    }
+                }
+            )
+            for i in range(1, mongos + 1)
+        ]
+        mongod_containers = []
+        for sh in range(1, shards + 1):
+            mongod_containers.extend([
+                Container(
+                    attrs={
+                        "Name": f"{depl_name}-sh-{sh}-{i}",
+                        "Id": "container_id",
+                        "State": "running",
+                        "Config": {
+                            "Labels": {
+                                "source": "tomodo", "tomodo-arbiter": "0",
+                                "tomodo-container-data-dir": f"/data/{depl_name}-sh-{sh}-{i}",
+                                "tomodo-data-dir": f"/var/tmp/tomodo/data/{depl_name}-sh-{sh}-{i}",
+                                "tomodo-group": depl_name,
+                                "tomodo-name": f"{depl_name}-sh-{sh}-{i}",
+                                "tomodo-port": shards_start_port + ((sh - 1) * replicas) + i,
+                                "tomodo-role": "rs-member",
+                                "tomodo-shard-count": str(shards), "tomodo-shard-id": str(sh),
+                                "tomodo-type": "Sharded Cluster"
+                            },
+                            "Env": [f"MONGO_VERSION={mongo_version}"]
+                        }
+                    }
+                )
+                for i in range(1, replicas + 1)
+            ])
+        reader_client.containers.list.return_value = [
+            *config_server_containers, *mongos_containers, *mongod_containers
+        ]
+        reader = Reader()
+        deployment = reader.get_deployment_by_name(depl_name)
+        assert isinstance(deployment, ShardedCluster), "Not a sharded cluster"
+        assert deployment.mongo_version == mongo_version, "Unexpected mongo version"
+        assert deployment.last_known_state == "running", "Unexpected state"
+        assert deployment.config_svr_replicaset.start_port == cfg_start_port, "Unexpected config server start port"
+        assert len(deployment.shards) == shards, "Unexpected shard count"
+        assert len(deployment.config_svr_replicaset.members) == shards, "Unexpected config server count"
+        assert len(deployment.routers) == mongos, "Unexpected mongos count"
+        for i in range(shards):
+            assert len(deployment.shards[i].members) == shards, f"Unexpected member count in shard {i}"
