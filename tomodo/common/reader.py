@@ -1,6 +1,6 @@
 import io
 import logging
-from typing import List, Dict
+from typing import List, Dict, Any
 
 import docker
 from docker.models.containers import Container
@@ -110,7 +110,7 @@ def marshal_replica_set(components: List[Dict]) -> ReplicaSet:
     return replica_set
 
 
-def split_into_chunks(lst, y):
+def split_into_chunks(lst: List[Any], y):
     chunk_size = len(lst) // y
     return [lst[i:i + chunk_size] for i in range(0, len(lst), chunk_size)]
 

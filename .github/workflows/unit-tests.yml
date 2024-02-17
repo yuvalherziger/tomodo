@@ -35,8 +35,7 @@ jobs:
         run: poetry install
 
       - name: Run Unit Tests
-        run: |
-          poetry run pytest tests/unit --cov ./tomodo --cov-report=xml
+        run: poetry run ci-unit-tests
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v4.0.1
