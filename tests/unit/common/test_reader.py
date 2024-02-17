@@ -1,10 +1,11 @@
 import secrets
+from typing import Dict
 from unittest.mock import Mock
 
 from docker.models.containers import Container
 
 from tomodo.common.models import Mongod, ReplicaSet, ShardedCluster
-from tomodo.common.reader import marshal_deployment, split_into_chunks, Reader
+from tomodo.common.reader import marshal_deployment, Reader
 
 
 class TestReader:
@@ -72,21 +73,6 @@ class TestReader:
         deployment = marshal_deployment(components=components)
         assert isinstance(deployment, ReplicaSet)
         assert deployment.port_range == f"{start_port}-{start_port + replicas - 1}"
-
-    @staticmethod
-    def test_split_into_chunks():
-        _input = [
-            "shard-0-1", "shard-0-2", "shard-0-3",
-            "shard-1-1", "shard-1-2", "shard-1-3",
-            "shard-2-1", "shard-2-2", "shard-2-3",
-        ]
-        expected = [
-            ["shard-0-1", "shard-0-2", "shard-0-3"],
-            ["shard-1-1", "shard-1-2", "shard-1-3"],
-            ["shard-2-1", "shard-2-2", "shard-2-3"],
-        ]
-        actual = split_into_chunks(_input, 3)
-        assert expected == actual
 
     @staticmethod
     def test_get_deployment_by_name_standalone(reader_client: Mock):
@@ -246,3 +232,54 @@ class TestReader:
         assert len(deployment.routers) == mongos, "Unexpected mongos count"
         for i in range(shards):
             assert len(deployment.shards[i].members) == shards, f"Unexpected member count in shard {i}"
+
+    @staticmethod
+    def test_get_all_deployments(reader_client: Mock):
+        sa_depl_name = "unit-test-sa"
+        mongo_version = "7.0.0"
+        rs_depl_name = "unit-test-rs"
+        replicas = 5
+        reader_client.containers.list.return_value = [
+            Container(
+                attrs={
+                    "Name": sa_depl_name,
+                    "Id": "container_id",
+                    "State": "running",
+                    "Config": {
+                        "Labels": {
+                            "source": "tomodo", "tomodo-arbiter": "0",
+                            "tomodo-container-data-dir": f"/data/{sa_depl_name}-db",
+                            "tomodo-data-dir": f"/var/tmp/tomodo/data/{sa_depl_name}-db", "tomodo-group": sa_depl_name,
+                            "tomodo-name": sa_depl_name, "tomodo-port": "1000", "tomodo-role": "standalone",
+                            "tomodo-shard-count": "2", "tomodo-shard-id": "0", "tomodo-type": "Standalone"
+                        },
+                        "Env": [f"MONGO_VERSION={mongo_version}"]
+                    }
+                }
+            ),
+            *[Container(
+                attrs={
+                    "Name": "mongos_name",
+                    "Id": "container_id",
+                    "State": "running",
+                    "Config": {
+                        "Labels": {
+                            "source": "tomodo", "tomodo-arbiter": "0",
+                            "tomodo-container-data-dir": f"/data/{rs_depl_name}-db-{i}",
+                            "tomodo-data-dir": f"/var/tmp/tomodo/data/{rs_depl_name}-db-{i}", "tomodo-group": rs_depl_name,
+                            "tomodo-name": f"{rs_depl_name}-{i}", "tomodo-port": str(27016 + i), "tomodo-role": "rs-member",
+                            "tomodo-shard-count": "2", "tomodo-shard-id": "0", "tomodo-type": "Replica Set"
+                        },
+                        "Env": [f"MONGO_VERSION={mongo_version}"]
+                    }
+                }
+            )
+                for i in range(1, replicas + 1)]
+        ]
+        reader = Reader()
+        deployments = reader.get_all_deployments()
+        assert isinstance(deployments, Dict), "Unexpected returned value type"
+        assert len(deployments.keys()) == 2, "Unexpected deployment count"
+        assert isinstance(deployments[sa_depl_name], Mongod)
+        assert isinstance(deployments[rs_depl_name], ReplicaSet)
+
