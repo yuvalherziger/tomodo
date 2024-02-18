@@ -74,6 +74,20 @@ def standalone_container() -> Container:
 
 
 @pytest.fixture
+def cleaner_os_path(mocker) -> Mock:
+    os_mock = Mock()
+    mocker.patch("tomodo.common.cleaner.os.path", return_value=os_mock)
+    return os_mock
+
+
+@pytest.fixture
+def cleaner_shutil(mocker) -> Mock:
+    shutil_mock = Mock()
+    mocker.patch("tomodo.common.cleaner.shutil", return_value=shutil_mock)
+    return shutil_mock
+
+
+@pytest.fixture
 def replica_set_containers() -> List[Container]:
     depl_name = "unit-test-rs"
     mongo_version = "6.0.0"
