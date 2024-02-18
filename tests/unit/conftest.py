@@ -66,6 +66,7 @@ def standalone_container() -> Container:
             "Name": depl_name,
             "Id": secrets.token_hex(32),
             "State": "running",
+            "Image": None,
             "Config": {
                 "Labels": {
                     "source": "tomodo", "tomodo-arbiter": "0",
@@ -81,7 +82,7 @@ def standalone_container() -> Container:
 
 
 @pytest.fixture
-def mongod() -> Mongod:
+def mongod(standalone_container: Container) -> Mongod:
     depl_name = "unit-test-sa"
     mongo_version = "7.0.0"
     return Mongod(
@@ -92,12 +93,13 @@ def mongod() -> Mongod:
         last_known_state="running",
         host_data_dir=f"/var/tmp/tomodo/data/{depl_name}-db",
         container_data_dir=f"/data/{depl_name}-db",
-        mongo_version=mongo_version
+        mongo_version=mongo_version,
+        container=standalone_container
     )
 
 
 @pytest.fixture
-def replica_set() -> ReplicaSet:
+def replica_set(replica_set_containers: List[Container]) -> ReplicaSet:
     depl_name = "unit-test-rs"
     mongo_version = "6.0.0"
     start_port = 27017
@@ -115,7 +117,8 @@ def replica_set() -> ReplicaSet:
                 last_known_state="running",
                 host_data_dir=f"/var/tmp/tomodo/data/{depl_name}-db-{i}",
                 container_data_dir=f"/data/{depl_name}-db-{i}",
-                mongo_version=mongo_version
+                mongo_version=mongo_version,
+                container=replica_set_containers[i - 1]
             )
             for i in range(1, replicas + 1)
         ]
@@ -147,6 +150,7 @@ def replica_set_containers() -> List[Container]:
                 "Name": "mongos_name",
                 "Id": secrets.token_hex(32),
                 "State": "running",
+                "Image": None,
                 "Config": {
                     "Labels": {
                         "source": "tomodo", "tomodo-arbiter": "0",
@@ -181,6 +185,7 @@ def sharded_cluster_containers() -> List[Container]:
                 "Name": f"{depl_name}-cfg-svr-{i}",
                 "Id": secrets.token_hex(32),
                 "State": "running",
+                "Image": None,
                 "Config": {
                     "Labels": {
                         "source": "tomodo", "tomodo-arbiter": "0",
@@ -204,6 +209,7 @@ def sharded_cluster_containers() -> List[Container]:
                 "Name": f"{depl_name}-mongos-{i}",
                 "Id": secrets.token_hex(32),
                 "State": "running",
+                "Image": None,
                 "Config": {
                     "Labels": {
                         "source": "tomodo",
@@ -226,6 +232,7 @@ def sharded_cluster_containers() -> List[Container]:
                     "Name": f"{depl_name}-sh-{sh}-{i}",
                     "Id": secrets.token_hex(32),
                     "State": "running",
+                    "Image": None,
                     "Config": {
                         "Labels": {
                             "source": "tomodo", "tomodo-arbiter": "0",

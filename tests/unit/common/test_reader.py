@@ -4,11 +4,51 @@ from unittest.mock import Mock
 
 from docker.models.containers import Container
 
+from tomodo.common.errors import InvalidDeploymentType, EmptyDeployment
 from tomodo.common.models import Mongod, ReplicaSet, ShardedCluster
-from tomodo.common.reader import marshal_deployment, Reader
+from tomodo.common.reader import marshal_deployment, Reader, list_deployments_in_markdown_table
 
 
 class TestReader:
+
+    @staticmethod
+    def test_marshal_deployment_with_invalid_type(reader_client: Mock):
+        container_name = "unit-test"
+        container_id = "0123456789abcdef"
+        state = "running"
+        container = Container(
+            attrs={
+                "Name": container_name,
+                "Id": container_id,
+                "State": state,
+            }
+        )
+        component = {
+            "tomodo-type": "MySQL",
+            "tomodo-container": container,
+            "tomodo-mongo-version": "7.0.0",
+            "tomodo-port": "27017",
+            "tomodo-name": container_name,
+            "tomodo-container-id": container_id,
+            "tomodo-data-dir": "/path/to/data",
+            "tomodo-container-data-dir": "/path/to/data",
+            "tomodo-arbiter": "0",
+        }
+        raised = False
+        try:
+            deployment = marshal_deployment(components=[component])
+        except InvalidDeploymentType:
+            raised = True
+        assert raised, "Expected exception not raised"
+
+    @staticmethod
+    def test_marshal_empty_deployment(reader_client: Mock):
+        raised = False
+        try:
+            deployment = marshal_deployment(components=[])
+        except EmptyDeployment:
+            raised = True
+        assert raised, "Expected exception not raised"
 
     @staticmethod
     def test_marshal_deployment_as_standalone(reader_client: Mock):
@@ -83,6 +123,8 @@ class TestReader:
         deployment = reader.get_deployment_by_name(depl_name)
         assert isinstance(deployment, Mongod)
         assert deployment.mongo_version == mongo_version
+        assert isinstance(deployment.as_markdown_table(), str)
+        assert isinstance(deployment.as_markdown_table_row(name=deployment.name), str)
         assert deployment.last_known_state == "running"
 
     @staticmethod
@@ -98,6 +140,9 @@ class TestReader:
         assert deployment.mongo_version == mongo_version, "Unexpected mongo version"
         assert deployment.last_known_state == "running", "Unexpected state"
         assert deployment.start_port == 27017, "Unexpected start port"
+        assert deployment.hostname == "mongodb://unit-test-rs-1:27017,unit-test-rs-2:27018,unit-test-rs-3:27019/" \
+                                      "?replicaSet=unit-test-rs", "Unexpected hostname"
+        assert isinstance(deployment.as_markdown_table(), str)
         assert member_count == replicas, "Unexpected replica count"
 
     @staticmethod
@@ -117,11 +162,17 @@ class TestReader:
         assert len(deployment.shards) == shards, "Unexpected shard count"
         assert len(deployment.config_svr_replicaset.members) == shards, "Unexpected config server count"
         assert len(deployment.routers) == mongos, "Unexpected mongos count"
+        assert deployment.container_count == 14
+        assert deployment.port_range == "2000-2013"
+        assert isinstance(deployment.as_markdown_table(), str)
+        assert isinstance(deployment.as_dict(detailed=False), Dict)
+        assert isinstance(deployment.as_dict(detailed=True), Dict)
         for i in range(shards):
             assert len(deployment.shards[i].members) == shards, f"Unexpected member count in shard {i}"
 
     @staticmethod
-    def test_get_all_deployments(standalone_container: Container, replica_set_containers: List[Container], reader_client: Mock):
+    def test_get_all_deployments(standalone_container: Container, replica_set_containers: List[Container],
+                                 reader_client: Mock):
         sa_depl_name = "unit-test-sa"
         rs_depl_name = "unit-test-rs"
         reader_client.containers.list.return_value = [
@@ -134,3 +185,33 @@ class TestReader:
         assert len(deployments.keys()) == 2, "Unexpected deployment count"
         assert isinstance(deployments[sa_depl_name], Mongod)
         assert isinstance(deployments[rs_depl_name], ReplicaSet)
+
+    @staticmethod
+    def test_describe_by_name(sharded_cluster_containers: List[Container], reader_client: Mock):
+        depl_name = "unit-test-sc"
+        reader_client.containers.list.return_value = sharded_cluster_containers
+        reader = Reader()
+        description = reader.describe_by_name(name=depl_name)
+        assert isinstance(description, str), "Not a sharded cluster"
+
+    @staticmethod
+    def test_describe_all(standalone_container: Container, replica_set_containers: List[Container],
+                          reader_client: Mock):
+        sa_depl_name = "unit-test-sa"
+        rs_depl_name = "unit-test-rs"
+        reader_client.containers.list.return_value = [
+            standalone_container,
+            *replica_set_containers
+        ]
+        reader = Reader()
+        descriptions = reader.describe_all()
+        assert isinstance(descriptions, List), "Unexpected returned value type"
+
+    @staticmethod
+    def test_list_deployments_in_markdown_table(mongod, replica_set, reader_client: Mock):
+        reader = Reader()
+        md_table = list_deployments_in_markdown_table({
+            mongod.name: mongod,
+            replica_set.name: replica_set,
+        })
+        assert isinstance(md_table, str), "Unexpected returned value type"

@@ -40,6 +40,17 @@ class TestCmd:
     @staticmethod
     @patch("tomodo.cmd.Cleaner")
     @patch("tomodo.cmd.is_docker_running")
+    def test_with_docker_not_running(docker_running_patch: MagicMock, cleaner_patch: MagicMock):
+        mock_cleaner_instance = cleaner_patch.return_value
+        mock_cleaner_instance.stop_deployment.return_value = None
+        docker_running_patch.return_value = False
+        result = CliRunner().invoke(cli, ["stop", "--name", "foo", "--auto-confirm"])
+        assert result.exit_code == 1
+        mock_cleaner_instance.stop_deployment.assert_not_called()
+
+    @staticmethod
+    @patch("tomodo.cmd.Cleaner")
+    @patch("tomodo.cmd.is_docker_running")
     def test_stop_by_name_with_auto_confirm(docker_running_patch: MagicMock, cleaner_patch: MagicMock):
         mock_cleaner_instance = cleaner_patch.return_value
         mock_cleaner_instance.stop_deployment.return_value = None
@@ -323,21 +334,124 @@ class TestCmd:
         assert "Could not remove your deployments - an error has occurred" in caplog.text
 
     @staticmethod
-    @pytest.mark.parametrize("fmt,exc", [("json", None), ("yaml", None), ("json", InvalidDeploymentType()),
-                                         ("json", KeyError())])
+    @pytest.mark.parametrize(
+        "fmt, exc",
+        [
+            ("json", None),
+            ("yaml", None),
+            ("table", None),
+            ("json", InvalidDeploymentType()),
+            ("json", KeyError())]
+    )
     @patch("tomodo.cmd.Reader")
+    @patch("tomodo.cmd.list_deployments_in_markdown_table")
     @patch("tomodo.cmd.is_docker_running")
-    def test_list(docker_running_patch: MagicMock, reader_patch: MagicMock, fmt: str, exc: Union[Exception, None],
+    def test_list(docker_running_patch: MagicMock,
+                  list_deployments_in_markdown_table_patch: MagicMock,
+                  reader_patch: MagicMock,
+                  fmt: str,
+                  exc: Union[Exception, None],
                   mongod: Mongod,
                   replica_set: ReplicaSet):
         mock_reader_instance = reader_patch.return_value
         if not exc:
-            mock_reader_instance.get_all_deployments.return_value = {
-                mongod.name: mongod,
-                replica_set.name: replica_set
-            }
+            if fmt == "table":
+                list_deployments_in_markdown_table_patch.return_value = "#"
+            else:
+                mock_reader_instance.get_all_deployments.return_value = {
+                    mongod.name: mongod,
+                    replica_set.name: replica_set
+                }
         else:
             mock_reader_instance.get_all_deployments.side_effect = exc
         result = CliRunner().invoke(cli, ["list", "--output", fmt])
         assert result.exit_code == (1 if exc else 0)
-        mock_reader_instance.get_all_deployments.assert_called_once()
+        if fmt == "table":
+            list_deployments_in_markdown_table_patch.assert_called_once()
+        else:
+            mock_reader_instance.get_all_deployments.assert_called_once()
+    @staticmethod
+    @pytest.mark.parametrize("exc", [None, InvalidDeploymentType(), ValueError()])
+    @patch("tomodo.cmd.Reader")
+    @patch("tomodo.cmd.Provisioner")
+    @patch("tomodo.cmd.is_docker_running")
+    def test_provision(docker_running_patch: MagicMock,
+                       provisioner_patch: MagicMock,
+                       reader_patch: MagicMock,
+                       exc: Union[Exception, None],
+                       mongod: Mongod,
+                       replica_set: ReplicaSet):
+        mock_reader_instance = reader_patch.return_value
+        mock_reader_instance.get_deployment_by_name.return_value = None
+        mock_provisioner_instance = provisioner_patch.return_value
+        if not exc:
+            mock_provisioner_instance.provision.return_value = None
+        else:
+            mock_provisioner_instance.provision.side_effect = exc
+        result = CliRunner().invoke(cli, ["provision", "--sharded"])
+        mock_provisioner_instance.provision.assert_called_once()
+        assert result.exit_code == (1 if exc else 0)
+
+    ##################################################################################################
+
+    @staticmethod
+    @pytest.mark.parametrize(
+        "fmt, exc, by_name",
+        [
+            ("json", None, True),
+            ("yaml", None, True),
+            ("table", None, True),
+            ("json", EmptyDeployment(), True),
+            ("json", InvalidDeploymentType(), True),
+            ("json", KeyError(), True),
+            ("json", None, False),
+            ("yaml", None, False),
+            ("table", None, False),
+            ("json", InvalidDeploymentType(), False),
+            ("json", KeyError(), False),
+        ]
+    )
+    @patch("tomodo.cmd.Reader")
+    @patch("tomodo.cmd.is_docker_running")
+    def test_describe(docker_running_patch: MagicMock,
+                      reader_patch: MagicMock,
+                      fmt: str,
+                      exc: Union[Exception, None],
+                      by_name: bool,
+                      mongod: Mongod,
+                      replica_set: ReplicaSet):
+        mock_reader_instance = reader_patch.return_value
+        args = ["describe", "--output", fmt]
+        if by_name:
+            args.extend(["--name", replica_set.name])
+            if not exc:
+                if fmt == "table":
+                    mock_reader_instance.describe_by_name.return_value = "#"
+                else:
+                    mock_reader_instance.get_deployment_by_name.return_value = replica_set
+            else:
+                mock_reader_instance.get_deployment_by_name.side_effect = exc
+        else:
+            if not exc:
+                if fmt == "table":
+                    mock_reader_instance.describe_all.return_value = ["#", "#"]
+                else:
+                    mock_reader_instance.get_all_deployments.return_value = {
+                        mongod.name: mongod,
+                        replica_set.name: replica_set
+                    }
+            else:
+                mock_reader_instance.get_all_deployments.side_effect = exc
+
+        result = CliRunner().invoke(cli, args)
+        assert result.exit_code == (1 if exc else 0)
+        if by_name:
+            if fmt == "table":
+                mock_reader_instance.describe_by_name.assert_called_once()
+            else:
+                mock_reader_instance.get_deployment_by_name.assert_called_once()
+        else:
+            if fmt == "table":
+                mock_reader_instance.describe_all.assert_called_once()
+            else:
+                mock_reader_instance.get_all_deployments.assert_called_once()

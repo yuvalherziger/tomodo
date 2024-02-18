@@ -14,6 +14,13 @@ from tomodo.common.models import ReplicaSet, Mongod
 class TestProvisioner:
 
     @staticmethod
+    def test_config():
+        config = ProvisionerConfig()
+        assert not config.is_auth_enabled
+        config = ProvisionerConfig(username="foo", password="bar")
+        assert config.is_auth_enabled
+
+    @staticmethod
     def test_check_and_pull_image_found_on_machine(caplog: LogCaptureFixture, provisioner_client):
         image_name = "mongo:latest"
         provisioner = Provisioner(config=ProvisionerConfig())

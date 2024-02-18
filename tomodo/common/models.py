@@ -35,7 +35,7 @@ class Deployment:
         }
 
     def as_markdown_table_row(self, name: str) -> str:
-        cells = [name, self.deployment_type, self.last_known_state, str(self.container_count),
+        cells = [name, self.deployment_type, self.last_known_state or "unknown", str(self.container_count),
                  self.mongo_version or "unknown", self.port_range]
         return "| " + "|".join(cells) + " |"
 
@@ -80,14 +80,6 @@ class Mongod(Deployment):
         self.deployment_type = deployment_type
         self.mongo_version = mongo_version
         self.is_arbiter = is_arbiter
-
-    @property
-    def labels(self):
-        return {
-            attr: str(getattr(self, attr))
-            for attr in dir(self)
-            if not attr.startswith("__") and not callable(getattr(self, attr))
-        }
 
     @property
     def port_range(self) -> str:

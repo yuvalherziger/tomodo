@@ -22,14 +22,6 @@ REPLICA_SET = "Replica Set"
 SHARDED_CLUSTER = "Sharded Cluster"
 
 
-def port_sorter(c: Dict):
-    return int(c.get("tomodo-port"))
-
-
-def shard_and_port_sorter(c: Dict):
-    return int(c.get("tomodo-shard-id", 0)) * int(c.get("tomodo-port", 0))
-
-
 def transform_deployment_type(depl: str) -> str:
     res = depl.replace(" ", "-").replace("_", "-").lower()
     if res == "standalone":
@@ -64,8 +56,6 @@ def marshal_deployment(components: List[Dict]) -> Deployment:
         return ShardedCluster.from_container_details(details=components)
     elif deployment_type == "Standalone":
         return Mongod.from_container_details(details=components[0])
-    else:
-        raise InvalidDeploymentType(deployment_type)
 
 
 def _read_mongo_version_from_container(container: Container) -> str:
