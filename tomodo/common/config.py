@@ -1,4 +1,3 @@
-import os
 from typing import List
 
 from ruamel.yaml import YAML
@@ -40,10 +39,3 @@ class ProvisionerConfig:
     @property
     def is_auth_enabled(self) -> bool:
         return self.username is not None and self.password is not None
-
-    @staticmethod
-    def from_file(file_path: str) -> "ProvisionerConfig":
-        with open(file_path, "r") as file:
-            data = yaml.load(file)
-        data["password"] = os.environ.get("MONGODB_PASSWORD", data.get("password"))
-        return ProvisionerConfig(**data)
