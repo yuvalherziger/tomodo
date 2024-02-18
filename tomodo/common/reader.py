@@ -1,8 +1,9 @@
 import io
 import logging
-from typing import List, Dict
+from typing import List, Dict, Union
 
 import docker
+from docker import DockerClient
 from docker.models.containers import Container
 from rich.console import Console
 
@@ -16,8 +17,6 @@ logger = logging.getLogger("rich")
 
 SOURCE_KEY = "source"
 SOURCE_VALUE = "tomodo"
-RUNNING = "running"
-STOPPED = "stopped"
 STANDALONE = "Standalone"
 REPLICA_SET = "Replica Set"
 SHARDED_CLUSTER = "Sharded Cluster"
@@ -95,8 +94,8 @@ def _extract_details_from_containers(containers) -> List[Dict]:
 
 
 class Reader:
-    def __init__(self):
-        self.docker_client = docker.from_env()
+    def __init__(self, docker_client: Union[DockerClient, None] = None):
+        self.docker_client = docker_client or docker.from_env()
 
     def list_deployments_in_markdown_table(self, deployments: Dict[str, Deployment], include_stopped: bool = True):
         headers = ["Name", "Type", "Status", "Containers", "Version", "Port(s)"]

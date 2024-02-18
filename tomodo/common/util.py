@@ -14,7 +14,7 @@ from rich.console import Console
 
 from tomodo.common.config import ProvisionerConfig
 from tomodo.common.errors import InvalidShellException
-from tomodo.common.models import Mongod, ShardedCluster, Deployment, ReplicaSet
+from tomodo.common.models import Mongod
 
 io = io.StringIO()
 
@@ -168,16 +168,6 @@ def cleanup_mongo_output(output: str) -> str:
         row for row in output.split("\n") if
         not re.match(mongo_cpp_log_re, row)
     )
-
-
-# TODO: Shouldn't stay in this module
-def get_deployment_summary(deployment: Deployment) -> str:
-    if isinstance(deployment, ShardedCluster):
-        return deployment.as_markdown_table()
-    if isinstance(deployment, ReplicaSet):
-        return deployment.as_markdown_table()
-    if isinstance(deployment, Mongod):
-        return deployment.as_markdown_table()
 
 
 def is_docker_running():

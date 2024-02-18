@@ -1,6 +1,9 @@
+import secrets
+from typing import List
 from unittest.mock import Mock
 
 import pytest
+from docker.models.containers import Container
 from docker.models.networks import Network
 
 
@@ -17,8 +20,17 @@ def provisioner_client(mocker) -> Mock:
 
 @pytest.fixture
 def reader_client(mocker) -> Mock:
-    module: str = "common.reader"
     return docker_client(mocker, "tomodo.common.reader.docker.from_env")
+
+
+@pytest.fixture
+def cleaner_client(mocker) -> Mock:
+    return docker_client(mocker, "tomodo.common.cleaner.docker.from_env")
+
+
+@pytest.fixture
+def util_client(mocker) -> Mock:
+    return docker_client(mocker, "tomodo.common.util.docker.from_env")
 
 
 @pytest.fixture
@@ -29,3 +41,146 @@ def docker_network() -> Network:
         "Name": network_name,
         "Id": network_id,
     })
+
+
+@pytest.fixture
+def socket(mocker) -> Mock:
+    socket_mock = Mock()
+    mocker.patch("tomodo.common.util.socket.socket", return_value=socket_mock)
+    return socket_mock
+
+
+@pytest.fixture
+def standalone_container() -> Container:
+    depl_name = "unit-test-sa"
+    mongo_version = "7.0.0"
+    return Container(
+        attrs={
+            "Name": depl_name,
+            "Id": secrets.token_hex(32),
+            "State": "running",
+            "Config": {
+                "Labels": {
+                    "source": "tomodo", "tomodo-arbiter": "0",
+                    "tomodo-container-data-dir": f"/data/{depl_name}-db",
+                    "tomodo-data-dir": f"/var/tmp/tomodo/data/{depl_name}-db", "tomodo-group": depl_name,
+                    "tomodo-name": depl_name, "tomodo-port": "27017", "tomodo-role": "standalone",
+                    "tomodo-shard-count": "2", "tomodo-shard-id": "0", "tomodo-type": "Standalone"
+                },
+                "Env": [f"MONGO_VERSION={mongo_version}"]
+            }
+        }
+    )
+
+
+@pytest.fixture
+def replica_set_containers() -> List[Container]:
+    depl_name = "unit-test-rs"
+    mongo_version = "6.0.0"
+    replicas = 3
+    return [
+        Container(
+            attrs={
+                "Name": "mongos_name",
+                "Id": secrets.token_hex(32),
+                "State": "running",
+                "Config": {
+                    "Labels": {
+                        "source": "tomodo", "tomodo-arbiter": "0",
+                        "tomodo-container-data-dir": f"/data/{depl_name}-db-{i}",
+                        "tomodo-data-dir": f"/var/tmp/tomodo/data/{depl_name}-db-{i}", "tomodo-group": depl_name,
+                        "tomodo-name": f"{depl_name}-{i}", "tomodo-port": 27016 + i, "tomodo-role": "rs-member",
+                        "tomodo-shard-count": "2", "tomodo-shard-id": "0", "tomodo-type": "Replica Set"
+                    },
+                    "Env": [f"MONGO_VERSION={mongo_version}"]
+                }
+            }
+        )
+        for i in range(1, replicas + 1)
+    ]
+
+
+@pytest.fixture
+def sharded_cluster_containers() -> List[Container]:
+    depl_name = "unit-test-sc"
+    mongo_version = "5.0.0"
+    mongos = 2
+    shards = 3
+    replicas = 3
+    config_servers = 3
+    cfg_start_port = 2000
+    mongos_start_port = cfg_start_port + config_servers
+    shards_start_port = mongos_start_port + mongos
+
+    config_server_containers = [
+        Container(
+            attrs={
+                "Name": f"{depl_name}-cfg-svr-{i}",
+                "Id": secrets.token_hex(32),
+                "State": "running",
+                "Config": {
+                    "Labels": {
+                        "source": "tomodo", "tomodo-arbiter": "0",
+                        "tomodo-container-data-dir": f"/data/{depl_name}-cfg-svr-{i}",
+                        "tomodo-data-dir": f"/var/tmp/tomodo/data/{depl_name}-cfg-svr-{i}",
+                        "tomodo-group": depl_name,
+                        "tomodo-name": f"{depl_name}-cfg-svr-{i}", "tomodo-port": cfg_start_port + i - 1,
+                        "tomodo-role": "cfg-svr",
+                        "tomodo-shard-count": str(shards), "tomodo-shard-id": "0", "tomodo-type": "Sharded Cluster"
+                    },
+                    "Env": [f"MONGO_VERSION={mongo_version}"]
+                }
+            }
+        )
+        for i in range(1, config_servers + 1)
+    ]
+
+    mongos_containers = [
+        Container(
+            attrs={
+                "Name": f"{depl_name}-mongos-{i}",
+                "Id": secrets.token_hex(32),
+                "State": "running",
+                "Config": {
+                    "Labels": {
+                        "source": "tomodo",
+                        "tomodo-group": depl_name,
+                        "tomodo-name": f"{depl_name}-mongos-{i}", "tomodo-port": mongos_start_port + i - 1,
+                        "tomodo-role": "mongos",
+                        "tomodo-shard-count": str(shards), "tomodo-shard-id": "0", "tomodo-type": "Sharded Cluster"
+                    },
+                    "Env": [f"MONGO_VERSION={mongo_version}"]
+                }
+            }
+        )
+        for i in range(1, mongos + 1)
+    ]
+    mongod_containers = []
+    for sh in range(1, shards + 1):
+        mongod_containers.extend([
+            Container(
+                attrs={
+                    "Name": f"{depl_name}-sh-{sh}-{i}",
+                    "Id": secrets.token_hex(32),
+                    "State": "running",
+                    "Config": {
+                        "Labels": {
+                            "source": "tomodo", "tomodo-arbiter": "0",
+                            "tomodo-container-data-dir": f"/data/{depl_name}-sh-{sh}-{i}",
+                            "tomodo-data-dir": f"/var/tmp/tomodo/data/{depl_name}-sh-{sh}-{i}",
+                            "tomodo-group": depl_name,
+                            "tomodo-name": f"{depl_name}-sh-{sh}-{i}",
+                            "tomodo-port": shards_start_port + ((sh - 1) * replicas) + i,
+                            "tomodo-role": "rs-member",
+                            "tomodo-shard-count": str(shards), "tomodo-shard-id": str(sh),
+                            "tomodo-type": "Sharded Cluster"
+                        },
+                        "Env": [f"MONGO_VERSION={mongo_version}"]
+                    }
+                }
+            )
+            for i in range(1, replicas + 1)
+        ])
+    return [
+        *config_server_containers, *mongos_containers, *mongod_containers
+    ]
