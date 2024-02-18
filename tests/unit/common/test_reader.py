@@ -1,10 +1,11 @@
 import secrets
+from typing import Dict, List
 from unittest.mock import Mock
 
 from docker.models.containers import Container
 
-from tomodo.common.models import Mongod, ReplicaSet
-from tomodo.common.reader import marshal_deployment, split_into_chunks, Reader
+from tomodo.common.models import Mongod, ReplicaSet, ShardedCluster
+from tomodo.common.reader import marshal_deployment, Reader
 
 
 class TestReader:
@@ -74,43 +75,10 @@ class TestReader:
         assert deployment.port_range == f"{start_port}-{start_port + replicas - 1}"
 
     @staticmethod
-    def test_split_into_chunks():
-        _input = [
-            "shard-0-1", "shard-0-2", "shard-0-3",
-            "shard-1-1", "shard-1-2", "shard-1-3",
-            "shard-2-1", "shard-2-2", "shard-2-3",
-        ]
-        expected = [
-            ["shard-0-1", "shard-0-2", "shard-0-3"],
-            ["shard-1-1", "shard-1-2", "shard-1-3"],
-            ["shard-2-1", "shard-2-2", "shard-2-3"],
-        ]
-        actual = split_into_chunks(_input, 3)
-        assert expected == actual
-
-    @staticmethod
-    def test_get_deployment_by_name_standalone(reader_client: Mock):
-        depl_name = "unit-test"
+    def test_get_deployment_by_name_standalone(standalone_container: Container, reader_client: Mock):
+        depl_name = "unit-test-sa"
         mongo_version = "7.0.0"
-        reader_client.containers.list.return_value = [
-            Container(
-                attrs={
-                    "Name": depl_name,
-                    "Id": "container_id",
-                    "State": "running",
-                    "Config": {
-                        "Labels": {
-                            "source": "tomodo", "tomodo-arbiter": "0",
-                            "tomodo-container-data-dir": f"/data/{depl_name}-db",
-                            "tomodo-data-dir": f"/var/tmp/tomodo/data/{depl_name}-db", "tomodo-group": depl_name,
-                            "tomodo-name": depl_name, "tomodo-port": "27017", "tomodo-role": "standalone",
-                            "tomodo-shard-count": "2", "tomodo-shard-id": "0", "tomodo-type": "Standalone"
-                        },
-                        "Env": [f"MONGO_VERSION={mongo_version}"]
-                    }
-                }
-            )
-        ]
+        reader_client.containers.list.return_value = [standalone_container]
         reader = Reader()
         deployment = reader.get_deployment_by_name(depl_name)
         assert isinstance(deployment, Mongod)
@@ -118,30 +86,11 @@ class TestReader:
         assert deployment.last_known_state == "running"
 
     @staticmethod
-    def test_get_deployment_by_name_replica_set(reader_client: Mock):
-        depl_name = "unit-test"
+    def test_get_deployment_by_name_replica_set(replica_set_containers: List[Container], reader_client: Mock):
+        depl_name = "unit-test-rs"
         mongo_version = "6.0.0"
         replicas = 3
-        reader_client.containers.list.return_value = [
-            Container(
-                attrs={
-                    "Name": "mongos_name",
-                    "Id": "container_id",
-                    "State": "running",
-                    "Config": {
-                        "Labels": {
-                            "source": "tomodo", "tomodo-arbiter": "0",
-                            "tomodo-container-data-dir": f"/data/{depl_name}-db-{i}",
-                            "tomodo-data-dir": f"/var/tmp/tomodo/data/{depl_name}-db-{i}", "tomodo-group": depl_name,
-                            "tomodo-name": f"{depl_name}-{i}", "tomodo-port": 27016 + i, "tomodo-role": "rs-member",
-                            "tomodo-shard-count": "2", "tomodo-shard-id": "0", "tomodo-type": "Replica Set"
-                        },
-                        "Env": [f"MONGO_VERSION={mongo_version}"]
-                    }
-                }
-            )
-            for i in range(1, replicas + 1)
-        ]
+        reader_client.containers.list.return_value = replica_set_containers
         reader = Reader()
         deployment = reader.get_deployment_by_name(depl_name)
         assert isinstance(deployment, ReplicaSet), "Not a replica set"
@@ -150,3 +99,38 @@ class TestReader:
         assert deployment.last_known_state == "running", "Unexpected state"
         assert deployment.start_port == 27017, "Unexpected start port"
         assert member_count == replicas, "Unexpected replica count"
+
+    @staticmethod
+    def test_get_deployment_by_name_sharded_cluster(sharded_cluster_containers: List[Container], reader_client: Mock):
+        depl_name = "unit-test-sc"
+        mongo_version = "5.0.0"
+        mongos = 2
+        shards = 3
+        cfg_start_port = 2000
+        reader_client.containers.list.return_value = sharded_cluster_containers
+        reader = Reader()
+        deployment = reader.get_deployment_by_name(depl_name)
+        assert isinstance(deployment, ShardedCluster), "Not a sharded cluster"
+        assert deployment.mongo_version == mongo_version, "Unexpected mongo version"
+        assert deployment.last_known_state == "running", "Unexpected state"
+        assert deployment.config_svr_replicaset.start_port == cfg_start_port, "Unexpected config server start port"
+        assert len(deployment.shards) == shards, "Unexpected shard count"
+        assert len(deployment.config_svr_replicaset.members) == shards, "Unexpected config server count"
+        assert len(deployment.routers) == mongos, "Unexpected mongos count"
+        for i in range(shards):
+            assert len(deployment.shards[i].members) == shards, f"Unexpected member count in shard {i}"
+
+    @staticmethod
+    def test_get_all_deployments(standalone_container: Container, replica_set_containers: List[Container], reader_client: Mock):
+        sa_depl_name = "unit-test-sa"
+        rs_depl_name = "unit-test-rs"
+        reader_client.containers.list.return_value = [
+            standalone_container,
+            *replica_set_containers
+        ]
+        reader = Reader()
+        deployments = reader.get_all_deployments()
+        assert isinstance(deployments, Dict), "Unexpected returned value type"
+        assert len(deployments.keys()) == 2, "Unexpected deployment count"
+        assert isinstance(deployments[sa_depl_name], Mongod)
+        assert isinstance(deployments[rs_depl_name], ReplicaSet)

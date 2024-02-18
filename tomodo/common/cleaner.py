@@ -15,8 +15,8 @@ logger = logging.getLogger("rich")
 class Cleaner:
 
     def __init__(self):
-        self.reader = Reader()
         self.docker_client = docker.from_env()
+        self.reader = Reader(docker_client=self.docker_client)
 
     def stop_deployment(self, name: str):
         deployment = self.reader.get_deployment_by_name(name, include_stopped=True)
@@ -79,7 +79,8 @@ class Cleaner:
     def _stop_container(self, container_id: str) -> None:
         container = self.docker_client.containers.get(container_id)
         if container.status == "running":
-            self.docker_client.containers.get(container_id).stop()
+            container.stop()
+            logger.info("Container %s stopped", container_id)
         else:
             logger.info("Container %s isn't running", container_id)
 

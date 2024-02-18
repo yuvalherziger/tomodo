@@ -1,6 +1,19 @@
-from typing import List, Dict
+from typing import List, Dict, Any
 
 from docker.models.containers import Container
+
+
+def port_sorter(c: Dict):
+    return int(c.get("tomodo-port"))
+
+
+def shard_and_port_sorter(c: Dict):
+    return int(c.get("tomodo-shard-id", 0)) * int(c.get("tomodo-port", 0))
+
+
+def split_into_chunks(lst: List[Any], y):
+    chunk_size = len(lst) // y
+    return [lst[i:i + chunk_size] for i in range(0, len(lst), chunk_size)]
 
 
 class Deployment:
@@ -355,3 +368,109 @@ class ShardedCluster(Deployment):
                 shard.as_dict(detailed=True) for shard in self.shards
             ],
         }
+
+    @staticmethod
+    def from_container_details(details: List[Dict]) -> "ShardedCluster":
+        name = details[0].get("tomodo-group")
+        mongo_version = details[0].get("tomodo-mongo-version")
+        config_svr_components = sorted([c for c in details if c.get("tomodo-role") == "cfg-svr"], key=port_sorter)
+        mongos_components = sorted([c for c in details if c.get("tomodo-role") == "mongos"], key=port_sorter)
+        shard_mongod_components = sorted([c for c in details if c.get("tomodo-role") == "rs-member"],
+                                         key=shard_and_port_sorter)
+        stopped_containers = 0
+        running_containers = 0
+
+        cfg_server_members = []
+        for component in config_svr_components:
+            container: Container = component.get("tomodo-container")
+            mongod = Mongod(
+                port=int(component.get("tomodo-port", 0)),
+                hostname=component.get("tomodo-name"),
+                name=component.get("tomodo-name"),
+                container_id=component.get("tomodo-container-id"),
+                host_data_dir=component.get("tomodo-data-dir"),
+                container_data_dir=component.get("tomodo-container-data-dir"),
+                is_arbiter=component.get("tomodo-arbiter") == "1",
+                container=container
+            )
+            mongod.last_known_state = container.status
+            cfg_server_members.append(mongod)
+            if container.status == "running":
+                running_containers += 1
+            else:
+                stopped_containers += 1
+        config_svr_replicaset = ReplicaSet(
+            members=cfg_server_members,
+            name=name,
+            start_port=cfg_server_members[0].port,
+            size=len(cfg_server_members)
+        )
+        routers = []
+        for component in mongos_components:
+            container: Container = component.get("tomodo-container")
+            mongos = Mongos(
+                port=int(component.get("tomodo-port", 0)),
+                hostname=component.get("tomodo-name"),
+                name=component.get("tomodo-name"),
+                container_id=component.get("tomodo-container-id"),
+                deployment_type="mongos",
+                _type="mongos",
+                container=container
+            )
+            mongos.last_known_state = container.status
+            routers.append(mongos)
+            if container.status == "running":
+                running_containers += 1
+            else:
+                stopped_containers += 1
+
+        num_shards = int(shard_mongod_components[0].get("tomodo-shard-count", 0)) if len(shard_mongod_components) else 0
+        shards = []
+        if num_shards > 0:
+            chunked_shard_components = split_into_chunks(shard_mongod_components, num_shards)
+        else:
+            chunked_shard_components = []
+        for shard_components in chunked_shard_components:
+            members = []
+            for component in shard_components:
+                container: Container = component.get("tomodo-container")
+                mongod = Mongod(
+                    port=int(component.get("tomodo-port", 0)),
+                    hostname=component.get("tomodo-name"),
+                    name=component.get("tomodo-name"),
+                    container_id=component.get("tomodo-container-id"),
+                    host_data_dir=component.get("tomodo-data-dir"),
+                    container_data_dir=component.get("tomodo-container-data-dir"),
+                    deployment_type="mongod",
+                    is_arbiter=component.get("tomodo-arbiter", "0") == "1",
+                    container=container,
+                )
+                mongod.last_known_state = container.status
+                members.append(mongod)
+                if container.status == "running":
+                    running_containers += 1
+                else:
+                    stopped_containers += 1
+            shards.append(
+                Shard(
+                    shard_id=int(shard_components[0].get("tomodo-shard-id", 0)),
+                    members=members,
+                    name=name,
+                    size=len(shard_components),
+                    start_port=int(shard_components[0].get("tomodo-port", 0)),
+                    deployment_type="shard"
+                )
+            )
+
+        sharded_cluster = ShardedCluster(
+            config_svr_replicaset=config_svr_replicaset,
+            routers=routers,
+            shards=shards,
+            name=name
+        )
+        if running_containers > 0:
+            sharded_cluster.last_known_state = "running"
+        else:
+            sharded_cluster.last_known_state = "stopped"
+        sharded_cluster.mongo_version = mongo_version
+        return sharded_cluster
