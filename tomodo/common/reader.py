@@ -93,20 +93,21 @@ def _extract_details_from_containers(containers) -> List[Dict]:
     return container_details
 
 
+def list_deployments_in_markdown_table(deployments: Dict[str, Deployment], include_stopped: bool = True):
+    headers = ["Name", "Type", "Status", "Containers", "Version", "Port(s)"]
+    rows = [
+        "| " + "|".join(headers) + " |",
+        "| " + "|".join(["------" for _ in range(len(headers))]) + " |",
+    ]
+    for name in deployments.keys():
+        depl = deployments.get(name)
+        rows.append(depl.as_markdown_table_row(name))
+    return "\n".join(rows)
+
+
 class Reader:
     def __init__(self, docker_client: Union[DockerClient, None] = None):
         self.docker_client = docker_client or docker.from_env()
-
-    def list_deployments_in_markdown_table(self, deployments: Dict[str, Deployment], include_stopped: bool = True):
-        headers = ["Name", "Type", "Status", "Containers", "Version", "Port(s)"]
-        rows = [
-            "| " + "|".join(headers) + " |",
-            "| " + "|".join(["------" for _ in range(len(headers))]) + " |",
-        ]
-        for name in deployments.keys():
-            depl = deployments.get(name)
-            rows.append(depl.as_markdown_table_row(name))
-        return "\n".join(rows)
 
     def describe_all(self, include_stopped: bool = False) -> List[str]:
         deployments: Dict[str, Deployment] = self.get_all_deployments(include_stopped=include_stopped)

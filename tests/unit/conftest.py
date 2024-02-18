@@ -6,6 +6,8 @@ import pytest
 from docker.models.containers import Container
 from docker.models.networks import Network
 
+from tomodo.common.models import Mongod, ReplicaSet
+
 
 def docker_client(mocker, module: str) -> Mock:
     mock_docker_client = Mock()
@@ -16,6 +18,11 @@ def docker_client(mocker, module: str) -> Mock:
 @pytest.fixture
 def provisioner_client(mocker) -> Mock:
     return docker_client(mocker, "tomodo.common.provisioner.docker.from_env")
+
+
+@pytest.fixture
+def cmd_client(mocker) -> Mock:
+    return docker_client(mocker, "tomodo.cmd.docker.from_env")
 
 
 @pytest.fixture
@@ -70,6 +77,48 @@ def standalone_container() -> Container:
                 "Env": [f"MONGO_VERSION={mongo_version}"]
             }
         }
+    )
+
+
+@pytest.fixture
+def mongod() -> Mongod:
+    depl_name = "unit-test-sa"
+    mongo_version = "7.0.0"
+    return Mongod(
+        port=27017,
+        name=depl_name,
+        hostname=depl_name,
+        container_id=secrets.token_hex(32),
+        last_known_state="running",
+        host_data_dir=f"/var/tmp/tomodo/data/{depl_name}-db",
+        container_data_dir=f"/data/{depl_name}-db",
+        mongo_version=mongo_version
+    )
+
+
+@pytest.fixture
+def replica_set() -> ReplicaSet:
+    depl_name = "unit-test-rs"
+    mongo_version = "6.0.0"
+    start_port = 27017
+    replicas = 3
+    return ReplicaSet(
+        name=depl_name,
+        start_port=start_port,
+        size=replicas,
+        members=[
+            Mongod(
+                port=27017 + i - 1,
+                name=f"{depl_name}-{i}",
+                hostname=f"{depl_name}-{i}",
+                container_id=secrets.token_hex(32),
+                last_known_state="running",
+                host_data_dir=f"/var/tmp/tomodo/data/{depl_name}-db-{i}",
+                container_data_dir=f"/data/{depl_name}-db-{i}",
+                mongo_version=mongo_version
+            )
+            for i in range(1, replicas + 1)
+        ]
     )
 
 

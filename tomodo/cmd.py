@@ -18,7 +18,7 @@ from tomodo.common.config import ProvisionerConfig
 from tomodo.common.errors import EmptyDeployment, TomodoError
 from tomodo.common.models import Deployment
 from tomodo.common.provisioner import Provisioner
-from tomodo.common.reader import Reader
+from tomodo.common.reader import Reader, list_deployments_in_markdown_table
 from tomodo.common.starter import Starter
 from tomodo.common.util import AnonymizingFilter, is_docker_running
 
@@ -320,8 +320,6 @@ def start(
         except TomodoError as e:
             logger.error(str(e))
             exit(1)
-    else:
-        raise NotImplementedError
 
 
 @cli.command(
@@ -352,6 +350,7 @@ def remove(
             pass
         except EmptyDeployment:
             logger.error("A deployment named '%s' doesn't exist", name)
+            exit(1)
         except TomodoError as e:
             logger.error(str(e))
             exit(1)
@@ -395,6 +394,7 @@ def list_(
     reader = Reader()
     try:
         deployments: Dict[str, Deployment] = reader.get_all_deployments(include_stopped=not exclude_stopped)
+        print(deployments)
         if output == OutputFormat.JSON:
             console.print_json(data={name: deployments[name].as_dict() for name in deployments.keys()})
         elif output == OutputFormat.YAML:
@@ -405,7 +405,7 @@ def list_(
             console.print(yaml_syntax)
         else:
             markdown = Markdown(
-                reader.list_deployments_in_markdown_table(deployments, include_stopped=not exclude_stopped),
+                list_deployments_in_markdown_table(deployments, include_stopped=not exclude_stopped),
             )
             console.print(markdown)
     except TomodoError as e:
