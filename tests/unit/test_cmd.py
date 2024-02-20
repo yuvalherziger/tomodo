@@ -19,7 +19,6 @@ class TestCmd:
     def test_version(cmd_client: Mock):
         engine = "24.0.7"
         platform = "Docker Desktop 4.24.0 (123456)"
-        runner = CliRunner()
         expected = {
             "tomodo_version": TOMODO_VERSION,
             "docker_version": {
@@ -33,7 +32,7 @@ class TestCmd:
                 "Name": platform
             }
         }
-        result = runner.invoke(cli, ["version"])
+        result = CliRunner().invoke(cli, ["version"])
         assert result.exit_code == 0
         assert json.loads(result.stdout) == expected
 

@@ -1,14 +1,18 @@
 import logging
 import platform
-from unittest.mock import Mock
+from typing import List
+from unittest.mock import Mock, patch, MagicMock, mock_open
 
 import docker
+import pytest
 from _pytest.logging import LogCaptureFixture
 from docker.models.containers import Container
 from docker.models.networks import Network
 
+from tests.unit.conftest import assert_partial_call
 from tomodo import Provisioner, ProvisionerConfig
-from tomodo.common.models import ReplicaSet, Mongod
+from tomodo.common.errors import InvalidConfiguration, DeploymentNameCollision, EmptyDeployment
+from tomodo.common.models import ReplicaSet, Mongod, Deployment
 
 
 class TestProvisioner:
@@ -60,13 +64,13 @@ class TestProvisioner:
         image_name = "mongo:latest"
         provisioner = Provisioner(config=ProvisionerConfig())
         image = Mock(name=image_name)
-        provisioner_client.images.get.side_effect = docker.errors.InvalidRepository()
+        provisioner_client.images.get.side_effect = ValueError()
         provisioner_client.images.pull.return_value = image
         unexpected_exception_raised = False
 
         try:
             provisioner.check_and_pull_image(image_name=image_name)
-        except docker.errors.InvalidRepository:
+        except ValueError:
             unexpected_exception_raised = True
 
         assert unexpected_exception_raised, "Expected an exception to be raised"
@@ -95,7 +99,9 @@ class TestProvisioner:
                f"was created [id: {docker_network.short_id}]" in caplog.text
 
     @staticmethod
-    def test_create_mongos_container(caplog: LogCaptureFixture, provisioner_client, docker_network: Network):
+    def test_create_mongos_container(caplog: LogCaptureFixture,
+                                     provisioner_client: Mock,
+                                     docker_network: Network):
         shards = 2
         deployment_name = "unit-test"
         container_id = "0123456789abcdef"
@@ -149,6 +155,435 @@ class TestProvisioner:
         )
 
     @staticmethod
-    def test_create_mongod_container(caplog: LogCaptureFixture, provisioner_client, docker_network: Network):
-        # TODO: implement test
-        assert True
+    @patch("os.path")
+    @patch("os.makedirs")
+    def test_create_mongod_container(makedirs_patch: MagicMock,
+                                     path_patch: MagicMock,
+                                     caplog: LogCaptureFixture,
+                                     standalone_container: Container,
+                                     provisioner_client: Mock,
+                                     docker_network: Network):
+        name = "unit-test-sa"
+        port = 27017
+        host_data_path = f"/var/tmp/tomodo/data/{name}-db"
+        path_patch.join.return_value = host_data_path
+        path_patch.abspath.return_value = host_data_path
+        makedirs_patch.return_value = None
+        provisioner_client.containers.run.return_value = standalone_container
+        provisioner = Provisioner(
+            config=ProvisionerConfig(name=name, port=port, network_name=docker_network.name)
+        )
+        provisioner.network = docker_network
+        with caplog.at_level(logging.INFO):
+            container = provisioner.create_mongod_container(
+                port=port,
+                name=name
+            )
+        assert_partial_call(
+            function_mock=provisioner_client.containers.run,
+            expected_args=("mongo:latest",),
+            expected_kwargs=dict(
+                detach=True,
+                ports={"27017/tcp": 27017},
+                platform="linux/arm64",
+                network="0123456789abcdef",
+                hostname="unit-test-sa",
+                name="unit-test-sa",
+                command=[
+                    "mongod",
+                    "--bind_ip_all",
+                    "--port",
+                    "27017",
+                    "--dbpath",
+                    "/data/unit-test-sa-db",
+                    "--logpath",
+                    "/data/unit-test-sa-db/mongod.log"
+                ],
+                environment=[],
+                labels={
+                    "source": "tomodo",
+                    "tomodo-name": "unit-test-sa",
+                    "tomodo-group": "unit-test-sa",
+                    "tomodo-port": "27017",
+                    "tomodo-role": "standalone",
+                    "tomodo-type": "Standalone",
+                    "tomodo-data-dir": host_data_path,
+                    "tomodo-container-data-dir": "/data/unit-test-sa-db",
+                    "tomodo-shard-id": "0",
+                    "tomodo-shard-count": "2",
+                    "tomodo-arbiter": "0"
+                }
+            )
+        )
+
+    @staticmethod
+    @patch("os.path")
+    @patch("os.makedirs")
+    def test_create_mongod_container_cfg_svr(makedirs_patch: MagicMock,
+                                             path_patch: MagicMock,
+                                             caplog: LogCaptureFixture,
+                                             sharded_cluster_containers: List[Container],
+                                             provisioner_client: Mock,
+                                             docker_network: Network):
+        name = "unit-test-sc"
+        port = 27017
+        host_data_path = f"/var/tmp/tomodo/data/{name}-db"
+        path_patch.join.return_value = host_data_path
+        path_patch.abspath.return_value = host_data_path
+        makedirs_patch.return_value = None
+        provisioner_client.containers.run.return_value = sharded_cluster_containers[0]
+        provisioner = Provisioner(
+            config=ProvisionerConfig(name=name, sharded=True, port=port, network_name=docker_network.name)
+        )
+        provisioner.network = docker_network
+        with caplog.at_level(logging.INFO):
+            container = provisioner.create_mongod_container(
+                port=port,
+                name=name,
+                config_svr=True,
+                replset_name=f"{name}-cfg-svr"
+            )
+        assert_partial_call(
+            function_mock=provisioner_client.containers.run,
+            expected_args=("mongo:latest",),
+            expected_kwargs=dict(
+                detach=True,
+                ports={"27017/tcp": 27017},
+                platform="linux/arm64",
+                network="0123456789abcdef",
+                hostname=name,
+                name=name,
+                command=[
+                    "mongod",
+                    "--bind_ip_all",
+                    "--port",
+                    "27017",
+                    "--dbpath",
+                    f"/data/{name}-db",
+                    "--logpath",
+                    f"/data/{name}-db/mongod.log",
+                    "--configsvr",
+                    "--replSet",
+                    f"{name}-cfg-svr"
+                ],
+                environment=[],
+                labels={
+                    "source": "tomodo",
+                    "tomodo-name": name,
+                    "tomodo-group": name,
+                    "tomodo-port": "27017",
+                    "tomodo-role": "cfg-svr",
+                    "tomodo-type": "Sharded Cluster",
+                    "tomodo-data-dir": host_data_path,
+                    "tomodo-container-data-dir": f"/data/{name}-db",
+                    "tomodo-shard-id": "0",
+                    "tomodo-shard-count": "2",
+                    "tomodo-arbiter": "0"
+                }
+            )
+        )
+
+    @staticmethod
+    @patch("os.path")
+    @patch("os.makedirs")
+    def test_create_mongod_container_replica_set(makedirs_patch: MagicMock,
+                                                 path_patch: MagicMock,
+                                                 caplog: LogCaptureFixture,
+                                                 replica_set_containers: List[Container],
+                                                 provisioner_client: Mock,
+                                                 docker_network: Network):
+        name = "unit-test-sc"
+        port = 27017
+        host_data_path = f"/var/tmp/tomodo/data/{name}-db"
+        path_patch.join.return_value = host_data_path
+        path_patch.abspath.return_value = host_data_path
+        makedirs_patch.return_value = None
+        provisioner_client.containers.run.return_value = replica_set_containers[0]
+        provisioner = Provisioner(
+            config=ProvisionerConfig(name=name, replica_set=True, port=port, network_name=docker_network.name)
+        )
+        provisioner.network = docker_network
+        with caplog.at_level(logging.INFO):
+            container = provisioner.create_mongod_container(
+                port=port,
+                name=name,
+                replset_name=name
+            )
+        assert_partial_call(
+            function_mock=provisioner_client.containers.run,
+            expected_args=("mongo:latest",),
+            expected_kwargs=dict(
+                detach=True,
+                ports={"27017/tcp": 27017},
+                platform="linux/arm64",
+                network="0123456789abcdef",
+                hostname=name,
+                name=name,
+                command=[
+                    "mongod",
+                    "--bind_ip_all",
+                    "--port",
+                    "27017",
+                    "--dbpath",
+                    f"/data/{name}-db",
+                    "--logpath",
+                    f"/data/{name}-db/mongod.log",
+                    "--replSet",
+                    name
+                ],
+                environment=[],
+                labels={
+                    "source": "tomodo",
+                    "tomodo-name": name,
+                    "tomodo-group": name,
+                    "tomodo-port": "27017",
+                    "tomodo-role": "rs-member",
+                    "tomodo-type": "Replica Set",
+                    "tomodo-data-dir": host_data_path,
+                    "tomodo-container-data-dir": f"/data/{name}-db",
+                    "tomodo-shard-id": "0",
+                    "tomodo-shard-count": "2",
+                    "tomodo-arbiter": "0"
+                }
+            )
+        )
+
+    @staticmethod
+    @pytest.mark.parametrize("authenticated, key_exists", [(False, False), (True, False), (True, True)])
+    @patch("os.chmod")
+    @patch("os.path")
+    @patch("os.makedirs")
+    def test_create_mongod_container_shard(makedirs_patch: MagicMock,
+                                           path_patch: MagicMock,
+                                           chmod_patch: MagicMock,
+                                           authenticated: bool,
+                                           key_exists: bool,
+                                           caplog: LogCaptureFixture,
+                                           sharded_cluster_containers: List[Container],
+                                           provisioner_client: Mock,
+                                           docker_network: Network):
+        name = "unit-test-sc"
+        port = 27017
+        host_data_path = f"/var/tmp/tomodo/data/{name}-db"
+        path_patch.join.return_value = host_data_path
+        path_patch.abspath.return_value = host_data_path
+        makedirs_patch.return_value = None
+        provisioner_client.containers.run.return_value = sharded_cluster_containers[0]
+        username = None
+        password = None
+        if authenticated:
+            username = "username"
+            password = "password"
+            path_patch.isfile.return_value = key_exists
+        provisioner = Provisioner(
+            config=ProvisionerConfig(
+                name=name, sharded=True, port=port, network_name=docker_network.name,
+                username=username, password=password
+            )
+        )
+        provisioner.network = docker_network
+        cmd_extra = []
+        environment = []
+        with caplog.at_level(logging.INFO):
+            with patch("builtins.open", mock_open()) as mocked_keyfile:
+                container = provisioner.create_mongod_container(
+                    port=port,
+                    name=name,
+                    replset_name=f"{name}-sh-01"
+                )
+                if authenticated:
+                    environment = ["MONGO_INITDB_ROOT_USERNAME=username", "MONGO_INITDB_ROOT_PASSWORD=password"]
+                    cmd_extra = ["--keyFile", "/etc/mongo/mongo_keyfile"]
+                    if not key_exists:
+                        mocked_keyfile().write.assert_called_once()
+        assert_partial_call(
+            function_mock=provisioner_client.containers.run,
+            expected_args=("mongo:latest",),
+            expected_kwargs=dict(
+                detach=True,
+                ports={"27017/tcp": 27017},
+                platform="linux/arm64",
+                network="0123456789abcdef",
+                hostname=name,
+                name=name,
+                command=[
+                    "mongod",
+                    "--bind_ip_all",
+                    "--port",
+                    "27017",
+                    "--dbpath",
+                    f"/data/{name}-db",
+                    "--logpath",
+                    f"/data/{name}-db/mongod.log",
+                    *cmd_extra,
+                    "--shardsvr",
+                    "--replSet",
+                    f"{name}-sh-01",
+                ],
+                environment=environment,
+                labels={
+                    "source": "tomodo",
+                    "tomodo-name": name,
+                    "tomodo-group": name,
+                    "tomodo-port": "27017",
+                    "tomodo-role": "rs-member",
+                    "tomodo-type": "Sharded Cluster",
+                    "tomodo-data-dir": host_data_path,
+                    "tomodo-container-data-dir": f"/data/{name}-db",
+                    "tomodo-shard-id": "0",
+                    "tomodo-shard-count": "2",
+                    "tomodo-arbiter": "0"
+                }
+            )
+        )
+
+    @staticmethod
+    def test_provision_fails_with_multiple_types(caplog: LogCaptureFixture,
+                                                 provisioner_client: Mock,
+                                                 docker_network: Network
+                                                 ):
+        raised = False
+        try:
+            provisioner = Provisioner(
+                config=ProvisionerConfig(
+                    sharded=True, standalone=True
+                )
+            )
+            provisioner.provision(deployment_getter=None)
+        except InvalidConfiguration:
+            raised = True
+        assert raised, "Exception not raised when expected"
+
+    @staticmethod
+    def test_provision_fails_for_arbiter_standalone(caplog: LogCaptureFixture,
+                                                    provisioner_client: Mock,
+                                                    docker_network: Network
+                                                    ):
+        raised = False
+        try:
+            provisioner = Provisioner(
+                config=ProvisionerConfig(
+                    standalone=True, arbiter=True
+                )
+            )
+            provisioner.provision(deployment_getter=None)
+        except InvalidConfiguration:
+            raised = True
+        assert raised, "Exception not raised when expected"
+
+    @staticmethod
+    def test_provision_fails_with_name_collision(caplog: LogCaptureFixture,
+                                                 provisioner_client: Mock,
+                                                 docker_network: Network
+                                                 ):
+        raised = False
+        try:
+            provisioner = Provisioner(
+                config=ProvisionerConfig(
+                    standalone=True
+                )
+            )
+            provisioner.provision(deployment_getter=lambda x: x)
+        except DeploymentNameCollision:
+            raised = True
+        assert raised, "Exception not raised when expected"
+
+    @staticmethod
+    @patch("os.path")
+    @patch("os.makedirs")
+    def test_provision_standalone(makedirs_patch: MagicMock,
+                                  path_patch: MagicMock,
+                                  caplog: LogCaptureFixture,
+                                  standalone_container: Container,
+                                  provisioner_client: Mock,
+                                  docker_network: Network
+                                  ):
+        config = ProvisionerConfig(
+            standalone=True
+        )
+        host_data_path = f"/var/tmp/tomodo/data/{config.name}-db"
+        image_name = "mongo:latest"
+        image = Mock(name=image_name)
+        provisioner_client.images.get.return_value = image
+        provisioner_client.networks.list.return_value = [docker_network]
+        makedirs_patch.return_value = None
+        path_patch.normcase.return_value = ""
+        provisioner_client.containers.run.return_value = standalone_container
+
+        def deployment_getter(name: str):
+            raise EmptyDeployment
+
+        raised = False
+
+        provisioner = Provisioner(config=config)
+        provisioner.network = docker_network
+        with patch.object(Provisioner, "wait_for_mongod_readiness", return_value=None) as readiness_mock:
+            # with patch.object(Provisioner, "print_connection_details", return_value=None):
+            #     deployment: Deployment = provisioner.provision(deployment_getter=deployment_getter)
+            #     readiness_mock.assert_called_once()
+            deployment: Deployment = provisioner.provision(deployment_getter=deployment_getter)
+            readiness_mock.assert_called_once()
+        assert isinstance(deployment, Mongod)
+
+    @staticmethod
+    @patch("tomodo.common.provisioner.run_mongo_shell_command")
+    @patch("os.path")
+    @patch("os.makedirs")
+    def test_provision_replica_set(makedirs_patch: MagicMock,
+                                   path_patch: MagicMock,
+                                   run_mongo_shell_command_patch: MagicMock,
+                                   caplog: LogCaptureFixture,
+                                   replica_set_containers: List[Container],
+                                   provisioner_client: Mock,
+                                   docker_network: Network
+                                   ):
+        config = ProvisionerConfig(
+            replica_set=True,
+            username="username",
+            password="password"
+        )
+        host_data_path = f"/var/tmp/tomodo/data/{config.name}-db"
+        image_name = "mongo:latest"
+        image = Mock(name=image_name)
+        provisioner_client.images.get.return_value = image
+        provisioner_client.networks.list.return_value = [docker_network]
+        makedirs_patch.return_value = None
+        path_patch.normcase.return_value = ""
+        provisioner_client.containers.run.side_effect = replica_set_containers
+
+        def deployment_getter(name: str):
+            raise EmptyDeployment
+
+        raised = False
+
+        provisioner = Provisioner(config=config)
+        provisioner.network = docker_network
+        with patch.object(Provisioner, "wait_for_mongod_readiness", return_value=None) as readiness_mock:
+            deployment: Deployment = provisioner.provision(deployment_getter=deployment_getter)
+            assert readiness_mock.call_count == 3
+        assert isinstance(deployment, ReplicaSet)
+
+    @staticmethod
+    @patch("tomodo.common.provisioner.run_mongo_shell_command")
+    def test_wait_for_mongod_readiness_ready(run_mongo_shell_command_patch: MagicMock,
+                                             mongod: Mongod,
+                                             caplog: LogCaptureFixture):
+        config = ProvisionerConfig(standalone=True)
+        run_mongo_shell_command_patch.return_value = (0, "1", None)
+        provisioner = Provisioner(config=config)
+        with caplog.at_level(logging.INFO):
+            provisioner.wait_for_mongod_readiness(mongod=mongod)
+        assert f"Server {mongod.name} is ready to accept connections" in caplog.text
+
+    @staticmethod
+    @patch("tomodo.common.provisioner.run_mongo_shell_command")
+    def test_wait_for_mongod_readiness_eventually_ready(run_mongo_shell_command_patch: MagicMock,
+                                                        mongod: Mongod,
+                                                        caplog: LogCaptureFixture):
+        config = ProvisionerConfig(standalone=True)
+        run_mongo_shell_command_patch.side_effect = [(0, "A", None), (0, "0", None), (0, "1", None)]
+        provisioner = Provisioner(config=config)
+        with caplog.at_level(logging.INFO):
+            provisioner.wait_for_mongod_readiness(mongod=mongod)
+        assert f"Server {mongod.name} is not ready to accept connections" in caplog.text
+        assert f"Server {mongod.name} is ready to accept connections" in caplog.text

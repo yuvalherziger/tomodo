@@ -1,6 +1,6 @@
 import secrets
-from typing import List
-from unittest.mock import Mock
+from typing import List, Any, Dict, Tuple
+from unittest.mock import Mock, MagicMock
 
 import pytest
 from docker.models.containers import Container
@@ -33,6 +33,11 @@ def reader_client(mocker) -> Mock:
 @pytest.fixture
 def cleaner_client(mocker) -> Mock:
     return docker_client(mocker, "tomodo.common.cleaner.docker.from_env")
+
+
+@pytest.fixture
+def starter_client(mocker) -> Mock:
+    return docker_client(mocker, "tomodo.common.starter.docker.from_env")
 
 
 @pytest.fixture
@@ -123,6 +128,19 @@ def replica_set(replica_set_containers: List[Container]) -> ReplicaSet:
             for i in range(1, replicas + 1)
         ]
     )
+
+
+@pytest.fixture
+def config_svr_replicaset() -> ReplicaSet:
+    deployment_name = "unit-test"
+    container_id = secrets.token_hex(32)
+    config_db = f"{deployment_name}-cfg"
+
+    return ReplicaSet(members=[
+        Mongod(name=f"{config_db}-1", port=27017, hostname=f"{config_db}-1"),
+        Mongod(name=f"{config_db}-2", port=27018, hostname=f"{config_db}-2"),
+        Mongod(name=f"{config_db}-3", port=27019, hostname=f"{config_db}-3"),
+    ])
 
 
 @pytest.fixture
@@ -254,3 +272,14 @@ def sharded_cluster_containers() -> List[Container]:
     return [
         *config_server_containers, *mongos_containers, *mongod_containers
     ]
+
+
+def assert_partial_call(expected_args: Tuple[Any], expected_kwargs: Dict[str, Any], function_mock: Mock):
+    function_mock.assert_called_once()
+    actual_args, actual_kwargs = function_mock.call_args
+    for arg in expected_args:
+        assert arg in actual_args
+    for kwarg in expected_kwargs.keys():
+        if isinstance(actual_kwargs.get(kwarg), MagicMock) or isinstance(actual_kwargs.get(kwarg), Mock):
+            continue
+        assert actual_kwargs.get(kwarg) == expected_kwargs.get(kwarg)

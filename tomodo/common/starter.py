@@ -11,8 +11,8 @@ logger = logging.getLogger("rich")
 class Starter:
 
     def __init__(self):
-        self.reader = Reader()
         self.docker_client = docker.from_env()
+        self.reader = Reader(docker_client=self.docker_client)
 
     def start_deployment(self, name: str):
         deployment = self.reader.get_deployment_by_name(name, include_stopped=True)
@@ -33,6 +33,6 @@ class Starter:
                 for member in shard.members:
                     logger.info("Starting shard replica set member in container %s", member.container_id)
                     self.docker_client.containers.get(member.container_id).start()
-
         if isinstance(deployment, Mongod):
-            pass
+            logger.info("Starting container %s", deployment.container_id)
+            self.docker_client.containers.get(deployment.container_id).start()
