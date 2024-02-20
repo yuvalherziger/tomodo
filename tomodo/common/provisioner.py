@@ -46,7 +46,7 @@ class Provisioner:
             logger.info("Pulling image '%s' from registry", image_name)
             self.docker_client.images.pull(image_name)
             logger.info("Pulled image '%s' successfully", image_name)
-        except docker.errors.APIError as e:
+        except Exception:
             raise
 
     def provision(self, deployment_getter: callable) -> Deployment:
@@ -127,7 +127,7 @@ class Provisioner:
 ```bash
 # Connect to the deployment with mongosh using localhost:
 {localhost_conn_strings}
- 
+
 # Optionally, map the deployment hosts:
 {command}
 
@@ -138,6 +138,7 @@ class Provisioner:
 # Print the deployment details:
 tomodo describe --name {self.config.name}
 ```""")
+
         console.print(markdown)
 
     def provision_sharded_cluster(self) -> ShardedCluster:
@@ -289,7 +290,7 @@ tomodo describe --name {self.config.name}
         for script in init_scripts:
             run_mongo_shell_command(mongo_cmd=script, mongod=first_mongod, config=self.config)
 
-    @with_retry(max_attempts=10, delay=5, retryable_exc=(APIError, Exception))
+    @with_retry(max_attempts=60, delay=1, retryable_exc=(APIError, Exception))
     def wait_for_mongod_readiness(self, mongod: Mongod):
         logger.info("Checking the readiness of %s", mongod.name)
         mongo_cmd = "db.runCommand({ping: 1}).ok"
@@ -345,7 +346,7 @@ tomodo describe --name {self.config.name}
                                 config_svr: bool = False, sh_cluster: bool = False, shard_id: int = 0,
                                 arbiter: bool = False) -> Container:
         data_dir_name = f"data/{name}-db"
-        data_dir_path = os.path.join(f"{DATA_FOLDER}", data_dir_name)
+        data_dir_path = os.path.join(DATA_FOLDER, data_dir_name)
         os.makedirs(data_dir_path, exist_ok=True)
         host_path = os.path.abspath(data_dir_path)
         container_path = f"/{data_dir_name}"

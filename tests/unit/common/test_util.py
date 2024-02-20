@@ -1,10 +1,12 @@
+import logging
 from unittest.mock import Mock
 
 import docker
 import pytest
+from _pytest.logging import LogCaptureFixture
 
 from tomodo.common.util import parse_2d_separated_string, parse_semver, anonymize_connection_string, \
-    is_port_range_available, is_docker_running, with_retry
+    is_port_range_available, is_docker_running, with_retry, AnonymizingFilter
 
 global divider
 
@@ -41,7 +43,7 @@ class TestUtil:
                              [
                                  ("mongodb://localhost", "mongodb://localhost"),
                                  ("mongodb://localhost:27017", "mongodb://localhost:27017"),
-                                 ("mongodb://username:passwords@localhost:27017",
+                                 ("mongodb://username:password@localhost:27017",
                                   "mongodb://username:************@localhost:27017"),
                              ])
     def test_anonymize_connection_string(input_str, expected_str):
@@ -130,3 +132,25 @@ class TestUtil:
         except ValueError:
             raised = True
         assert raised
+
+    @staticmethod
+    def test_anonymizing_filter(caplog: LogCaptureFixture):
+        logger = logging.getLogger("test_logger")
+        logger.setLevel(logging.DEBUG)
+        logger.handlers = []
+        stream_handler = logging.StreamHandler()
+        logger.addHandler(stream_handler)
+        logger.addFilter(AnonymizingFilter())
+        with caplog.at_level(logging.INFO):
+            logger.info(
+                "Your hostname is %s", "mongodb://username:password@localhost:27017"
+            )
+
+            logger.info(
+                "Your hostname is %s", {"hostname": "mongodb://username:password@localhost:27017"}
+            )
+            logger.info(
+                "Your hostname is %s", {"some_int": 1}
+            )
+        assert "username:password" not in caplog.text
+        assert "username:************" in caplog.text
