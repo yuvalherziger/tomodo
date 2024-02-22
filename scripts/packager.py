@@ -3,7 +3,7 @@ from pathlib import Path
 import PyInstaller.__main__
 
 here = Path(__file__).parent.absolute()
-path_to_main = str(here / "cmd.py")
+path_to_main = str(here / "../tomodo/cmd.py")
 
 
 def install_amd64():
