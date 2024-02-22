@@ -316,5 +316,5 @@ except DeploymentNotFound:
 deployments: Dict = tfunc.list_deployments(include_stopped=True)
 for name in deployments.keys():
     deployment: Deployment = deployments[name]
-    print(deployment.last_known_state)
+    print(f"Deployment {name} is {deployment.last_known_state}")
 ```
