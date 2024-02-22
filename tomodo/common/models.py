@@ -42,6 +42,21 @@ class Deployment:
     def as_markdown_table(self) -> str:
         raise NotImplementedError
 
+    def stop(self, cleaner=None) -> None:
+        from tomodo.common.cleaner import Cleaner
+        cleaner = cleaner or Cleaner()
+        cleaner.stop_deployment(name=self.name)
+
+    def start(self, starter=None) -> None:
+        from tomodo.common.starter import Starter
+        starter = starter or Starter()
+        starter.start_deployment(name=self.name)
+
+    def remove(self, cleaner=None) -> None:
+        from tomodo.common.cleaner import Cleaner
+        cleaner = cleaner or Cleaner()
+        cleaner.delete_deployment(name=self.name)
+
 
 class Mongod(Deployment):
     port: int

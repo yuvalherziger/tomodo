@@ -279,19 +279,42 @@ tomodo remove --auto-approve
 ## Programmatic Usage
 
 You can install tomodo in your Python (>=3.8) projects using `pip` or any other Python package manager, and use it
-programmatically. You'll still need a Docker machine running, but you'll be able to invoke tomodo programmatically.
+programmatically (you'll still need a Docker daemon running).
 
 ```python
-from tomodo import Provisioner, ProvisionerConfig
+from typing import Dict
 
-provisioner = Provisioner(
-    config=ProvisionerConfig(
-        port=20000,
-        replica_set=True,
-        replicas=3,
-        name="my-replica-set"
-    )
-)
+from tomodo import functional as tfunc
+from tomodo.common.errors import DeploymentNotFound
+from tomodo.common.models import Deployment, Mongod, ReplicaSet, ShardedCluster
 
-deployment = provisioner.provision()
+# Create a standalone instance:
+mongod: Mongod = tfunc.provision_standalone_instance(port=1000)
+
+# Create a replica set:
+replica_set: ReplicaSet = tfunc.provision_replica_set(port=2000, replicas=3)
+
+# Create a sharded cluster:
+sh_cluster: ShardedCluster = tfunc.provision_sharded_cluster(port=3000, shards=2, config_servers=3, mongos=2)
+
+# Stop a deployment:
+mongod.stop()
+
+# Restart a deployment:
+mongod.start()
+
+# Remove a deployment permanently:
+mongod.remove()
+
+# Find a deployment by name
+try:
+    deployment = tfunc.get_deployment(name="elegant-leopard", include_stopped=True)
+except DeploymentNotFound:
+    print("Deployment not found")
+
+# List all deployments:
+deployments: Dict = tfunc.list_deployments(include_stopped=True)
+for name in deployments.keys():
+    deployment: Deployment = deployments[name]
+    print(deployment.last_known_state)
 ```

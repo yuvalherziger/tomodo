@@ -15,7 +15,7 @@ from ruamel.yaml import YAML
 from tomodo import TOMODO_VERSION
 from tomodo.common.cleaner import Cleaner
 from tomodo.common.config import ProvisionerConfig
-from tomodo.common.errors import EmptyDeployment, TomodoError
+from tomodo.common.errors import DeploymentNotFound, TomodoError
 from tomodo.common.models import Deployment
 from tomodo.common.provisioner import Provisioner
 from tomodo.common.reader import Reader, list_deployments_in_markdown_table
@@ -214,7 +214,7 @@ def describe(
             else:
                 markdown = Markdown(reader.describe_by_name(name, include_stopped=True))
                 console.print(markdown)
-        except EmptyDeployment:
+        except DeploymentNotFound:
             logger.error("A deployment named '%s' doesn't exist", name)
             exit(1)
         except TomodoError as e:
@@ -273,7 +273,7 @@ def stop(
                     raise typer.Abort()
         except typer.Abort:
             pass
-        except EmptyDeployment:
+        except DeploymentNotFound:
             logger.error("A deployment named '%s' doesn't exist", name)
             exit(1)
         except TomodoError as e:
@@ -314,7 +314,7 @@ def start(
     if name:
         try:
             starter.start_deployment(name)
-        except EmptyDeployment:
+        except DeploymentNotFound:
             logger.error("A deployment named '%s' doesn't exist", name)
             exit(1)
         except TomodoError as e:
@@ -348,7 +348,7 @@ def remove(
                     raise typer.Abort()
         except typer.Abort:
             pass
-        except EmptyDeployment:
+        except DeploymentNotFound:
             logger.error("A deployment named '%s' doesn't exist", name)
             exit(1)
         except TomodoError as e:

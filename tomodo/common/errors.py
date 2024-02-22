@@ -2,7 +2,7 @@ class TomodoError(Exception):
     pass
 
 
-class EmptyDeployment(TomodoError):
+class DeploymentNotFound(TomodoError):
     pass
 
 

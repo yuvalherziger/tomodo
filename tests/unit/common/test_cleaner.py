@@ -9,7 +9,7 @@ from docker.models.containers import Container
 from tomodo import Cleaner
 
 
-class TestReader:
+class TestCleaner:
 
     @staticmethod
     def test_stop_deployment_standalone(cleaner_client: Mock, standalone_container: Container,

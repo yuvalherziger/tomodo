@@ -9,7 +9,7 @@ from typer.testing import CliRunner
 
 from tomodo import TOMODO_VERSION
 from tomodo.cmd import cli
-from tomodo.common.errors import EmptyDeployment, InvalidDeploymentType
+from tomodo.common.errors import DeploymentNotFound, InvalidDeploymentType
 from tomodo.common.models import Mongod, ReplicaSet
 
 
@@ -83,7 +83,7 @@ class TestCmd:
     def test_stop_by_name_not_found(docker_running_patch: MagicMock, cleaner_patch: MagicMock,
                                     caplog: LogCaptureFixture):
         mock_cleaner_instance = cleaner_patch.return_value
-        mock_cleaner_instance.stop_deployment.side_effect = EmptyDeployment()
+        mock_cleaner_instance.stop_deployment.side_effect = DeploymentNotFound()
         with caplog.at_level(logging.INFO):
             result = CliRunner().invoke(cli, ["stop", "--name", "foo", "--auto-confirm"])
         assert result.exit_code == 1
@@ -187,7 +187,7 @@ class TestCmd:
     @patch("tomodo.cmd.is_docker_running")
     def test_start_not_found(docker_running_patch: MagicMock, starter_patch: MagicMock, caplog: LogCaptureFixture):
         mock_starter_instance = starter_patch.return_value
-        mock_starter_instance.start_deployment.side_effect = EmptyDeployment()
+        mock_starter_instance.start_deployment.side_effect = DeploymentNotFound()
         with caplog.at_level(logging.INFO):
             result = CliRunner().invoke(cli, ["start", "--name", "foo"])
         assert result.exit_code == 1
@@ -243,7 +243,7 @@ class TestCmd:
     def test_remove_by_name_not_found(docker_running_patch: MagicMock, cleaner_patch: MagicMock,
                                       caplog: LogCaptureFixture):
         mock_cleaner_instance = cleaner_patch.return_value
-        mock_cleaner_instance.delete_deployment.side_effect = EmptyDeployment()
+        mock_cleaner_instance.delete_deployment.side_effect = DeploymentNotFound()
         with caplog.at_level(logging.INFO):
             result = CliRunner().invoke(cli, ["remove", "--name", "foo", "--auto-confirm"])
         assert result.exit_code == 1
@@ -400,7 +400,7 @@ class TestCmd:
             ("json", None, True),
             ("yaml", None, True),
             ("table", None, True),
-            ("json", EmptyDeployment(), True),
+            ("json", DeploymentNotFound(), True),
             ("json", InvalidDeploymentType(), True),
             ("json", KeyError(), True),
             ("json", None, False),

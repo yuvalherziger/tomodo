@@ -11,7 +11,7 @@ from docker.models.networks import Network
 
 from tests.unit.conftest import assert_partial_call
 from tomodo import Provisioner, ProvisionerConfig
-from tomodo.common.errors import InvalidConfiguration, DeploymentNameCollision, EmptyDeployment
+from tomodo.common.errors import InvalidConfiguration, DeploymentNameCollision, DeploymentNotFound
 from tomodo.common.models import ReplicaSet, Mongod, Deployment
 
 
@@ -489,10 +489,12 @@ class TestProvisioner:
         assert raised, "Exception not raised when expected"
 
     @staticmethod
+    @patch("tomodo.common.provisioner.is_port_range_available")
     @patch("os.path")
     @patch("os.makedirs")
     def test_provision_standalone(makedirs_patch: MagicMock,
                                   path_patch: MagicMock,
+                                  is_port_range_available_patch: MagicMock,
                                   caplog: LogCaptureFixture,
                                   standalone_container: Container,
                                   provisioner_client: Mock,
@@ -511,7 +513,7 @@ class TestProvisioner:
         provisioner_client.containers.run.return_value = standalone_container
 
         def deployment_getter(name: str):
-            raise EmptyDeployment
+            raise DeploymentNotFound
 
         raised = False
 
@@ -526,12 +528,14 @@ class TestProvisioner:
         assert isinstance(deployment, Mongod)
 
     @staticmethod
+    @patch("tomodo.common.provisioner.is_port_range_available")
     @patch("tomodo.common.provisioner.run_mongo_shell_command")
     @patch("os.path")
     @patch("os.makedirs")
     def test_provision_replica_set(makedirs_patch: MagicMock,
                                    path_patch: MagicMock,
                                    run_mongo_shell_command_patch: MagicMock,
+                                   is_port_range_available_patch: MagicMock,
                                    caplog: LogCaptureFixture,
                                    replica_set_containers: List[Container],
                                    provisioner_client: Mock,
@@ -552,7 +556,7 @@ class TestProvisioner:
         provisioner_client.containers.run.side_effect = replica_set_containers
 
         def deployment_getter(name: str):
-            raise EmptyDeployment
+            raise DeploymentNotFound
 
         raised = False
 
