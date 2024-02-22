@@ -5,7 +5,7 @@ import secrets
 import pytest
 
 from tomodo import ProvisionerConfig, Provisioner, Reader, Cleaner
-from tomodo.common.errors import EmptyDeployment
+from tomodo.common.errors import DeploymentNotFound
 from tomodo.common.models import Deployment, Mongod
 from tomodo.common.util import run_mongo_shell_command
 
@@ -62,7 +62,7 @@ class TestDeploymentCreation:
             cleaner = Cleaner()
             try:
                 cleaner.delete_deployment(name=name)
-            except EmptyDeployment:
+            except DeploymentNotFound:
                 pass
 
     @staticmethod
@@ -96,7 +96,7 @@ class TestDeploymentCreation:
             cleaner = Cleaner()
             try:
                 cleaner.delete_deployment(name=name)
-            except EmptyDeployment:
+            except DeploymentNotFound:
                 pass
 
     @staticmethod
@@ -134,5 +134,5 @@ class TestDeploymentCreation:
             cleaner = Cleaner()
             try:
                 cleaner.delete_deployment(name=name)
-            except EmptyDeployment:
+            except DeploymentNotFound:
                 pass

@@ -4,7 +4,7 @@ from unittest.mock import Mock
 
 from docker.models.containers import Container
 
-from tomodo.common.errors import InvalidDeploymentType, EmptyDeployment
+from tomodo.common.errors import InvalidDeploymentType, DeploymentNotFound
 from tomodo.common.models import Mongod, ReplicaSet, ShardedCluster
 from tomodo.common.reader import marshal_deployment, Reader, list_deployments_in_markdown_table
 
@@ -46,7 +46,7 @@ class TestReader:
         raised = False
         try:
             deployment = marshal_deployment(components=[])
-        except EmptyDeployment:
+        except DeploymentNotFound:
             raised = True
         assert raised, "Expected exception not raised"
 

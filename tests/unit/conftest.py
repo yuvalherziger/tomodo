@@ -6,7 +6,7 @@ import pytest
 from docker.models.containers import Container
 from docker.models.networks import Network
 
-from tomodo.common.models import Mongod, ReplicaSet
+from tomodo import models
 
 
 def docker_client(mocker, module: str) -> Mock:
@@ -87,10 +87,10 @@ def standalone_container() -> Container:
 
 
 @pytest.fixture
-def mongod(standalone_container: Container) -> Mongod:
+def mongod(standalone_container: Container) -> models.Mongod:
     depl_name = "unit-test-sa"
     mongo_version = "7.0.0"
-    return Mongod(
+    return models.Mongod(
         port=27017,
         name=depl_name,
         hostname=depl_name,
@@ -104,17 +104,17 @@ def mongod(standalone_container: Container) -> Mongod:
 
 
 @pytest.fixture
-def replica_set(replica_set_containers: List[Container]) -> ReplicaSet:
+def replica_set(replica_set_containers: List[Container]) -> models.ReplicaSet:
     depl_name = "unit-test-rs"
     mongo_version = "6.0.0"
     start_port = 27017
     replicas = 3
-    return ReplicaSet(
+    return models.ReplicaSet(
         name=depl_name,
         start_port=start_port,
         size=replicas,
         members=[
-            Mongod(
+            models.Mongod(
                 port=27017 + i - 1,
                 name=f"{depl_name}-{i}",
                 hostname=f"{depl_name}-{i}",
@@ -131,15 +131,15 @@ def replica_set(replica_set_containers: List[Container]) -> ReplicaSet:
 
 
 @pytest.fixture
-def config_svr_replicaset() -> ReplicaSet:
+def config_svr_replicaset() -> models.ReplicaSet:
     deployment_name = "unit-test"
     container_id = secrets.token_hex(32)
     config_db = f"{deployment_name}-cfg"
 
-    return ReplicaSet(members=[
-        Mongod(name=f"{config_db}-1", port=27017, hostname=f"{config_db}-1"),
-        Mongod(name=f"{config_db}-2", port=27018, hostname=f"{config_db}-2"),
-        Mongod(name=f"{config_db}-3", port=27019, hostname=f"{config_db}-3"),
+    return models.ReplicaSet(members=[
+        models.Mongod(name=f"{config_db}-1", port=27017, hostname=f"{config_db}-1"),
+        models.Mongod(name=f"{config_db}-2", port=27018, hostname=f"{config_db}-2"),
+        models.Mongod(name=f"{config_db}-3", port=27019, hostname=f"{config_db}-3"),
     ])
 
 

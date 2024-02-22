@@ -3,7 +3,7 @@ import logging
 import os
 import platform
 import secrets
-from typing import List
+from typing import List, Union
 
 import docker
 from docker import DockerClient
@@ -15,7 +15,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 
 from tomodo.common.config import ProvisionerConfig
-from tomodo.common.errors import InvalidConfiguration, PortsTakenException, EmptyDeployment, DeploymentNameCollision
+from tomodo.common.errors import InvalidConfiguration, PortsTakenException, DeploymentNotFound, DeploymentNameCollision
 from tomodo.common.models import Mongod, ReplicaSet, ShardedCluster, Mongos, Shard, ConfigServer, Deployment
 from tomodo.common.util import (
     is_port_range_available, with_retry, run_mongo_shell_command
@@ -49,7 +49,7 @@ class Provisioner:
         except Exception:
             raise
 
-    def provision(self, deployment_getter: callable) -> Deployment:
+    def provision(self, deployment_getter: callable) -> Union[Mongod, ReplicaSet, ShardedCluster]:
         if sum([self.config.standalone, self.config.replica_set, self.config.sharded]) != 1:
             logger.error("Exactly one of the following has to be specified: standalone, replica-set, or sharded")
             raise InvalidConfiguration
@@ -60,7 +60,7 @@ class Provisioner:
         try:
             _ = deployment_getter(self.config.name)
             raise DeploymentNameCollision(f"The deployment {self.config.name} already exists")
-        except EmptyDeployment:
+        except DeploymentNotFound:
             pass
         self.check_and_pull_image(f"{self.config.image_repo}:{self.config.image_tag}")
         self.network = self.get_network()

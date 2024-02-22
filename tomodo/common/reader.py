@@ -7,7 +7,7 @@ from docker import DockerClient
 from docker.models.containers import Container
 from rich.console import Console
 
-from tomodo.common.errors import EmptyDeployment, InvalidDeploymentType
+from tomodo.common.errors import DeploymentNotFound, InvalidDeploymentType
 from tomodo.common.models import Deployment, Mongod, ReplicaSet, ShardedCluster
 
 io = io.StringIO()
@@ -47,7 +47,7 @@ def _key_by(list_of_dicts: List[Dict], attr: str) -> Dict[str, List[Dict]]:
 
 def marshal_deployment(components: List[Dict]) -> Deployment:
     if len(components) == 0:
-        raise EmptyDeployment()
+        raise DeploymentNotFound()
     deployment_type = transform_deployment_type(components[0].get("tomodo-type"))
 
     if deployment_type == "Replica Set":
@@ -68,7 +68,7 @@ def _read_mongo_version_from_container(container: Container) -> str:
     )
 
 
-def _extract_details_from_containers(containers) -> List[Dict]:
+def extract_details_from_containers(containers) -> List[Dict]:
     container_details = []
     for container in containers:
         mongo_version = _read_mongo_version_from_container(container)
@@ -115,9 +115,12 @@ class Reader:
         if name:
             container_filters = {"label": f"tomodo-group={name}"}
         containers = self.docker_client.containers.list(filters=container_filters, all=include_stopped)
-        return _extract_details_from_containers(containers=containers)
+        return extract_details_from_containers(containers=containers)
 
-    def get_all_deployments(self, include_stopped: bool = False) -> Dict[str, Deployment]:
+    def get_all_deployments(self, include_stopped: bool = False) -> Dict[
+        str,
+        Union[Mongod, ReplicaSet, ShardedCluster]
+    ]:
         container_details = self._get_containers(include_stopped=include_stopped)
         unmarshalled = _key_by(container_details, "tomodo-group")
         return {
@@ -125,6 +128,7 @@ class Reader:
             for deployment_name in unmarshalled.keys()
         }
 
-    def get_deployment_by_name(self, name: str, include_stopped: bool = False) -> Deployment:
+    def get_deployment_by_name(self, name: str, include_stopped: bool = False) -> Union[
+        Mongod, ReplicaSet, ShardedCluster]:
         container_details = self._get_containers(name=name, include_stopped=include_stopped)
         return marshal_deployment(container_details)
