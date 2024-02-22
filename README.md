@@ -234,7 +234,7 @@ Use the `list` command to list your deployments:
 # List all deployments
 tomodo list
 
-# Describe only running deployments
+# List only running deployments
 tomodo list --exclude-stopped
 ```
 
@@ -249,7 +249,7 @@ tomodo stop
 # Stop a deployment by name
 tomodo stop --name troubled-narwhal
 
-# Stop a deployment without prompting for confirmation
+# Stop all deployments without prompting for confirmation
 tomodo stop --auto-approve
 ```
 
@@ -272,7 +272,7 @@ tomodo remove
 # Remove a deployment by name
 tomodo remove --name troubled-narwhal
 
-# Remove a deployment without prompting for confirmation
+# Remove all deployments without prompting for confirmation
 tomodo remove --auto-approve
 ```
 
