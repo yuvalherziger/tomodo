@@ -277,6 +277,10 @@ class ReplicaSet(Deployment):
         return replica_set
 
 
+class AtlasDeployment(Mongod):
+    pass
+
+
 class Shard(ReplicaSet):
     shard_id: int = None
 

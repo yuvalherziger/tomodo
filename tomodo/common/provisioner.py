@@ -16,7 +16,8 @@ from rich.markdown import Markdown
 
 from tomodo.common.config import ProvisionerConfig
 from tomodo.common.errors import InvalidConfiguration, PortsTakenException, DeploymentNotFound, DeploymentNameCollision
-from tomodo.common.models import Mongod, ReplicaSet, ShardedCluster, Mongos, Shard, ConfigServer, Deployment
+from tomodo.common.models import Mongod, ReplicaSet, ShardedCluster, Mongos, Shard, ConfigServer, Deployment, \
+    AtlasDeployment
 from tomodo.common.util import (
     is_port_range_available, with_retry, run_mongo_shell_command
 )
@@ -50,8 +51,8 @@ class Provisioner:
             raise
 
     def provision(self, deployment_getter: callable) -> Union[Mongod, ReplicaSet, ShardedCluster]:
-        if sum([self.config.standalone, self.config.replica_set, self.config.sharded]) != 1:
-            logger.error("Exactly one of the following has to be specified: standalone, replica-set, or sharded")
+        if sum([self.config.standalone, self.config.replica_set, self.config.sharded, self.config.atlas]) != 1:
+            logger.error("Exactly one of the following has to be specified: standalone, replica-set, sharded, or atlas")
             raise InvalidConfiguration
         if self.config.standalone and self.config.arbiter:
             logger.error("Arbiter nodes are supported only in replica sets and sharded clusters")
@@ -78,6 +79,8 @@ class Provisioner:
             deployment = self.provision_replica_set(replicaset=deployment, arbiter=self.config.arbiter)
         elif self.config.sharded:
             deployment: ShardedCluster = self.provision_sharded_cluster()
+        elif self.config.atlas:
+            deployment: AtlasDeployment = self.provision_atlas_deployment()
         self.print_deployment_summary(deployment=deployment)
         self.print_connection_details(deployment=deployment)
         return deployment
@@ -215,6 +218,25 @@ tomodo describe --name {self.config.name}
             run_mongo_shell_command(mongo_cmd=cmd, mongod=sharded_cluster.routers[0])
         return sharded_cluster
 
+    def provision_atlas_deployment(self) -> AtlasDeployment:
+        atlas_depl = AtlasDeployment(
+            port=self.config.port,
+            name=self.config.name,
+            hostname=self.config.name
+        )
+        logger.info("This action will provision a local MongoDB Atlas instance")
+        if not is_port_range_available((atlas_depl.port,)):
+            raise PortsTakenException
+        container = self.create_atlas_container(
+            port=atlas_depl.port,
+            name=atlas_depl.name
+        )
+        atlas_depl.container = container
+        atlas_depl.container_id = container.short_id
+        logger.info("MongoDB container created [id: %s]", atlas_depl.container_id)
+        self.wait_for_mongod_readiness(mongod=atlas_depl)
+        return atlas_depl
+
     def provision_replica_set(self, replicaset: ReplicaSet, config_svr: bool = False, sh_cluster: bool = False,
                               shard_id: int = 0, arbiter: bool = False) -> ReplicaSet:
         if arbiter:
@@ -304,6 +326,36 @@ tomodo describe --name {self.config.name}
             logger.info("Server %s is not ready to accept connections", mongod.name)
             raise Exception("Server isn't ready")
         logger.info("Server %s is ready to accept connections", mongod.name)
+
+    def create_atlas_container(self, port: int, name: str) -> Container:
+        repo = self.config.image_repo
+        tag = self.config.image_tag
+        image = f"{repo}:{tag}"
+        logger.info("Creating container from '%s'. Port %d will be exposed to your host", image, port)
+        networking_config = NetworkingConfig(
+            endpoints_config={
+                self.network.name: EndpointConfig(version="1.43", aliases=[name])
+            }
+        )
+        return self.docker_client.containers.run(
+            f"{repo}:{tag}",
+            detach=True,
+            ports={f"{port}/tcp": port},
+            platform=f"linux/{platform.machine()}",
+            network=self.network.id,
+            hostname=name,
+            name=name,
+            networking_config=networking_config,
+            labels={
+                "source": "tomodo",
+                "tomodo-name": name,
+                "tomodo-group": name,
+                "tomodo-port": str(port),
+                "tomodo-role": "atlas",
+                "tomodo-type": "Atlas Deployment",
+                "tomodo-shard-count": str(self.config.shards or 0),
+            }
+        )
 
     def create_mongos_container(self, port: int, name: str, config_svr_replicaset: ReplicaSet):
         repo = self.config.image_repo

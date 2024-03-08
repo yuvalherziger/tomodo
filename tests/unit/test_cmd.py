@@ -384,11 +384,11 @@ class TestCmd:
         mock_reader_instance.get_deployment_by_name.return_value = None
         mock_provisioner_instance = provisioner_patch.return_value
         if not exc:
-            mock_provisioner_instance.provision.return_value = None
+            mock_provisioner_instance.cli.return_value = None
         else:
-            mock_provisioner_instance.provision.side_effect = exc
+            mock_provisioner_instance.cli.side_effect = exc
         result = CliRunner().invoke(cli, ["provision", "--sharded"])
-        mock_provisioner_instance.provision.assert_called_once()
+        mock_provisioner_instance.cli.assert_called_once()
         assert result.exit_code == (1 if exc else 0)
 
     ##################################################################################################

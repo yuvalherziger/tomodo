@@ -10,7 +10,7 @@ yaml = YAML()
 class ProvisionerConfig:
 
     def __init__(self, standalone: bool = False, replica_set: bool = False, replicas: int = 3, shards: int = 2,
-                 arbiter: bool = False, name: str = None, priority: bool = False,
+                 arbiter: bool = False, name: str = None, priority: bool = False, atlas: bool = False,
                  sharded: bool = False, port: int = 27017, config_servers: int = 1, mongos: int = 1,
                  auth: bool = False, username: str = None, password: str = None, auth_db: str = "admin",
                  auth_roles: List[str] = None, image_repo: str = "mongo", image_tag: str = "latest",
@@ -18,6 +18,7 @@ class ProvisionerConfig:
         self.standalone = standalone
         self.replica_set = replica_set
         self.replicas = replicas
+        self.atlas = atlas
         self.shards = shards
         self.arbiter = arbiter
         self.name = name or get_random_name(combo=[ADJECTIVES, ANIMALS], separator="-", style="lowercase")

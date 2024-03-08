@@ -177,3 +177,9 @@ def is_docker_running():
         return True
     except (APIError, DockerException):
         return False
+
+
+def check_docker():
+    if not is_docker_running():
+        logger.error("The Docker daemon isn't running")
+        exit(1)
