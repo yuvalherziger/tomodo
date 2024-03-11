@@ -5,7 +5,8 @@ from docker.models.containers import Container
 
 from tomodo.common.models import Mongod, ReplicaSet, ShardedCluster
 from tomodo.common.reader import extract_details_from_containers
-from tomodo.functional import provision_standalone_instance, provision_replica_set, provision_sharded_cluster
+from tomodo.functional import provision_standalone_instance, provision_replica_set, provision_sharded_cluster, \
+    provision_atlas_instance
 
 
 class TestFunctional:
@@ -21,6 +22,24 @@ class TestFunctional:
         mock_provisioner_instance = provisioner_patch.return_value
         mock_provisioner_instance.provision.return_value = mongod
         res = provision_standalone_instance(
+            name=mongod.name,
+            port=mongod.port
+        )
+        mock_provisioner_instance.provision.assert_called_once()
+        provisioner_patch.assert_called_once()
+        assert isinstance(res, Mongod)
+
+    @staticmethod
+    @patch("tomodo.functional.Reader")
+    @patch("tomodo.functional.Provisioner")
+    def test_provision_atlas_instance(
+            provisioner_patch: MagicMock,
+            reader_patch: MagicMock,
+            mongod: Mongod
+    ):
+        mock_provisioner_instance = provisioner_patch.return_value
+        mock_provisioner_instance.provision.return_value = mongod
+        res = provision_atlas_instance(
             name=mongod.name,
             port=mongod.port
         )

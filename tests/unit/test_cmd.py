@@ -8,6 +8,7 @@ from _pytest.logging import LogCaptureFixture
 from typer.testing import CliRunner
 
 from tomodo import TOMODO_VERSION
+from tomodo.cli.provision import cli as provision_cli
 from tomodo.cmd import cli
 from tomodo.common.errors import DeploymentNotFound, InvalidDeploymentType
 from tomodo.common.models import Mongod, ReplicaSet
@@ -38,7 +39,7 @@ class TestCmd:
 
     @staticmethod
     @patch("tomodo.cmd.Cleaner")
-    @patch("tomodo.cmd.is_docker_running")
+    @patch("tomodo.common.util.is_docker_running")
     def test_with_docker_not_running(docker_running_patch: MagicMock, cleaner_patch: MagicMock):
         mock_cleaner_instance = cleaner_patch.return_value
         mock_cleaner_instance.stop_deployment.return_value = None
@@ -49,7 +50,7 @@ class TestCmd:
 
     @staticmethod
     @patch("tomodo.cmd.Cleaner")
-    @patch("tomodo.cmd.is_docker_running")
+    @patch("tomodo.common.util.is_docker_running")
     def test_stop_by_name_with_auto_confirm(docker_running_patch: MagicMock, cleaner_patch: MagicMock):
         mock_cleaner_instance = cleaner_patch.return_value
         mock_cleaner_instance.stop_deployment.return_value = None
@@ -59,7 +60,7 @@ class TestCmd:
 
     @staticmethod
     @patch("tomodo.cmd.Cleaner")
-    @patch("tomodo.cmd.is_docker_running")
+    @patch("tomodo.common.util.is_docker_running")
     def test_stop_by_name_confirmed_positive(docker_running_patch: MagicMock, cleaner_patch: MagicMock):
         mock_cleaner_instance = cleaner_patch.return_value
         mock_cleaner_instance.stop_deployment.return_value = None
@@ -69,7 +70,7 @@ class TestCmd:
 
     @staticmethod
     @patch("tomodo.cmd.Cleaner")
-    @patch("tomodo.cmd.is_docker_running")
+    @patch("tomodo.common.util.is_docker_running")
     def test_stop_by_name_confirmed_negative(docker_running_patch: MagicMock, cleaner_patch: MagicMock):
         mock_cleaner_instance = cleaner_patch.return_value
         mock_cleaner_instance.stop_deployment.return_value = None
@@ -79,7 +80,7 @@ class TestCmd:
 
     @staticmethod
     @patch("tomodo.cmd.Cleaner")
-    @patch("tomodo.cmd.is_docker_running")
+    @patch("tomodo.common.util.is_docker_running")
     def test_stop_by_name_not_found(docker_running_patch: MagicMock, cleaner_patch: MagicMock,
                                     caplog: LogCaptureFixture):
         mock_cleaner_instance = cleaner_patch.return_value
@@ -92,7 +93,7 @@ class TestCmd:
 
     @staticmethod
     @patch("tomodo.cmd.Cleaner")
-    @patch("tomodo.cmd.is_docker_running")
+    @patch("tomodo.common.util.is_docker_running")
     def test_stop_by_name_raised_tomodo_error(docker_running_patch: MagicMock, cleaner_patch: MagicMock,
                                               caplog: LogCaptureFixture):
         mock_cleaner_instance = cleaner_patch.return_value
@@ -105,7 +106,7 @@ class TestCmd:
 
     @staticmethod
     @patch("tomodo.cmd.Cleaner")
-    @patch("tomodo.cmd.is_docker_running")
+    @patch("tomodo.common.util.is_docker_running")
     def test_stop_by_name_raised_general_error(docker_running_patch: MagicMock, cleaner_patch: MagicMock,
                                                caplog: LogCaptureFixture):
         mock_cleaner_instance = cleaner_patch.return_value
@@ -118,7 +119,7 @@ class TestCmd:
 
     @staticmethod
     @patch("tomodo.cmd.Cleaner")
-    @patch("tomodo.cmd.is_docker_running")
+    @patch("tomodo.common.util.is_docker_running")
     def test_stop_all_with_auto_confirm(docker_running_patch: MagicMock, cleaner_patch: MagicMock):
         mock_cleaner_instance = cleaner_patch.return_value
         mock_cleaner_instance.stop_all_deployments.return_value = None
@@ -128,7 +129,7 @@ class TestCmd:
 
     @staticmethod
     @patch("tomodo.cmd.Cleaner")
-    @patch("tomodo.cmd.is_docker_running")
+    @patch("tomodo.common.util.is_docker_running")
     def test_stop_all_confirmed_positive(docker_running_patch: MagicMock, cleaner_patch: MagicMock):
         mock_cleaner_instance = cleaner_patch.return_value
         mock_cleaner_instance.stop_all_deployments.return_value = None
@@ -138,7 +139,7 @@ class TestCmd:
 
     @staticmethod
     @patch("tomodo.cmd.Cleaner")
-    @patch("tomodo.cmd.is_docker_running")
+    @patch("tomodo.common.util.is_docker_running")
     def test_stop_all_confirmed_negative(docker_running_patch: MagicMock, cleaner_patch: MagicMock):
         mock_cleaner_instance = cleaner_patch.return_value
         mock_cleaner_instance.stop_all_deployments.return_value = None
@@ -148,7 +149,7 @@ class TestCmd:
 
     @staticmethod
     @patch("tomodo.cmd.Cleaner")
-    @patch("tomodo.cmd.is_docker_running")
+    @patch("tomodo.common.util.is_docker_running")
     def test_stop_all_raised_tomodo_error(docker_running_patch: MagicMock, cleaner_patch: MagicMock,
                                           caplog: LogCaptureFixture):
         mock_cleaner_instance = cleaner_patch.return_value
@@ -161,7 +162,7 @@ class TestCmd:
 
     @staticmethod
     @patch("tomodo.cmd.Cleaner")
-    @patch("tomodo.cmd.is_docker_running")
+    @patch("tomodo.common.util.is_docker_running")
     def test_stop_all_raised_general_error(docker_running_patch: MagicMock, cleaner_patch: MagicMock,
                                            caplog: LogCaptureFixture):
         mock_cleaner_instance = cleaner_patch.return_value
@@ -174,7 +175,7 @@ class TestCmd:
 
     @staticmethod
     @patch("tomodo.cmd.Starter")
-    @patch("tomodo.cmd.is_docker_running")
+    @patch("tomodo.common.util.is_docker_running")
     def test_start(docker_running_patch: MagicMock, starter_patch: MagicMock):
         mock_starter_instance = starter_patch.return_value
         mock_starter_instance.start_deployment.return_value = None
@@ -184,7 +185,7 @@ class TestCmd:
 
     @staticmethod
     @patch("tomodo.cmd.Starter")
-    @patch("tomodo.cmd.is_docker_running")
+    @patch("tomodo.common.util.is_docker_running")
     def test_start_not_found(docker_running_patch: MagicMock, starter_patch: MagicMock, caplog: LogCaptureFixture):
         mock_starter_instance = starter_patch.return_value
         mock_starter_instance.start_deployment.side_effect = DeploymentNotFound()
@@ -196,7 +197,7 @@ class TestCmd:
 
     @staticmethod
     @patch("tomodo.cmd.Starter")
-    @patch("tomodo.cmd.is_docker_running")
+    @patch("tomodo.common.util.is_docker_running")
     def test_start_raises_tomodo_error(docker_running_patch: MagicMock, starter_patch: MagicMock,
                                        caplog: LogCaptureFixture):
         mock_starter_instance = starter_patch.return_value
@@ -209,7 +210,7 @@ class TestCmd:
 
     @staticmethod
     @patch("tomodo.cmd.Cleaner")
-    @patch("tomodo.cmd.is_docker_running")
+    @patch("tomodo.common.util.is_docker_running")
     def test_remove_by_name_with_auto_confirm(docker_running_patch: MagicMock, cleaner_patch: MagicMock):
         mock_cleaner_instance = cleaner_patch.return_value
         mock_cleaner_instance.delete_deployment.return_value = None
@@ -219,7 +220,7 @@ class TestCmd:
 
     @staticmethod
     @patch("tomodo.cmd.Cleaner")
-    @patch("tomodo.cmd.is_docker_running")
+    @patch("tomodo.common.util.is_docker_running")
     def test_remove_by_name_confirmed_positive(docker_running_patch: MagicMock, cleaner_patch: MagicMock):
         mock_cleaner_instance = cleaner_patch.return_value
         mock_cleaner_instance.delete_deployment.return_value = None
@@ -229,7 +230,7 @@ class TestCmd:
 
     @staticmethod
     @patch("tomodo.cmd.Cleaner")
-    @patch("tomodo.cmd.is_docker_running")
+    @patch("tomodo.common.util.is_docker_running")
     def test_remove_by_name_confirmed_negative(docker_running_patch: MagicMock, cleaner_patch: MagicMock):
         mock_cleaner_instance = cleaner_patch.return_value
         mock_cleaner_instance.delete_deployment.return_value = None
@@ -239,7 +240,7 @@ class TestCmd:
 
     @staticmethod
     @patch("tomodo.cmd.Cleaner")
-    @patch("tomodo.cmd.is_docker_running")
+    @patch("tomodo.common.util.is_docker_running")
     def test_remove_by_name_not_found(docker_running_patch: MagicMock, cleaner_patch: MagicMock,
                                       caplog: LogCaptureFixture):
         mock_cleaner_instance = cleaner_patch.return_value
@@ -252,7 +253,7 @@ class TestCmd:
 
     @staticmethod
     @patch("tomodo.cmd.Cleaner")
-    @patch("tomodo.cmd.is_docker_running")
+    @patch("tomodo.common.util.is_docker_running")
     def test_remove_by_name_raised_tomodo_error(docker_running_patch: MagicMock, cleaner_patch: MagicMock,
                                                 caplog: LogCaptureFixture):
         mock_cleaner_instance = cleaner_patch.return_value
@@ -265,7 +266,7 @@ class TestCmd:
 
     @staticmethod
     @patch("tomodo.cmd.Cleaner")
-    @patch("tomodo.cmd.is_docker_running")
+    @patch("tomodo.common.util.is_docker_running")
     def test_remove_by_name_raised_general_error(docker_running_patch: MagicMock, cleaner_patch: MagicMock,
                                                  caplog: LogCaptureFixture):
         mock_cleaner_instance = cleaner_patch.return_value
@@ -278,7 +279,7 @@ class TestCmd:
 
     @staticmethod
     @patch("tomodo.cmd.Cleaner")
-    @patch("tomodo.cmd.is_docker_running")
+    @patch("tomodo.common.util.is_docker_running")
     def test_remove_all_with_auto_confirm(docker_running_patch: MagicMock, cleaner_patch: MagicMock):
         mock_cleaner_instance = cleaner_patch.return_value
         mock_cleaner_instance.delete_all_deployments.return_value = None
@@ -288,7 +289,7 @@ class TestCmd:
 
     @staticmethod
     @patch("tomodo.cmd.Cleaner")
-    @patch("tomodo.cmd.is_docker_running")
+    @patch("tomodo.common.util.is_docker_running")
     def test_remove_all_confirmed_positive(docker_running_patch: MagicMock, cleaner_patch: MagicMock):
         mock_cleaner_instance = cleaner_patch.return_value
         mock_cleaner_instance.delete_all_deployments.return_value = None
@@ -298,7 +299,7 @@ class TestCmd:
 
     @staticmethod
     @patch("tomodo.cmd.Cleaner")
-    @patch("tomodo.cmd.is_docker_running")
+    @patch("tomodo.common.util.is_docker_running")
     def test_remove_all_confirmed_negative(docker_running_patch: MagicMock, cleaner_patch: MagicMock):
         mock_cleaner_instance = cleaner_patch.return_value
         mock_cleaner_instance.delete_all_deployments.return_value = None
@@ -308,7 +309,7 @@ class TestCmd:
 
     @staticmethod
     @patch("tomodo.cmd.Cleaner")
-    @patch("tomodo.cmd.is_docker_running")
+    @patch("tomodo.common.util.is_docker_running")
     def test_remove_all_raised_tomodo_error(docker_running_patch: MagicMock, cleaner_patch: MagicMock,
                                             caplog: LogCaptureFixture):
         mock_cleaner_instance = cleaner_patch.return_value
@@ -321,7 +322,7 @@ class TestCmd:
 
     @staticmethod
     @patch("tomodo.cmd.Cleaner")
-    @patch("tomodo.cmd.is_docker_running")
+    @patch("tomodo.common.util.is_docker_running")
     def test_remove_all_raised_general_error(docker_running_patch: MagicMock, cleaner_patch: MagicMock,
                                              caplog: LogCaptureFixture):
         mock_cleaner_instance = cleaner_patch.return_value
@@ -344,7 +345,7 @@ class TestCmd:
     )
     @patch("tomodo.cmd.Reader")
     @patch("tomodo.cmd.list_deployments_in_markdown_table")
-    @patch("tomodo.cmd.is_docker_running")
+    @patch("tomodo.common.util.is_docker_running")
     def test_list(docker_running_patch: MagicMock,
                   list_deployments_in_markdown_table_patch: MagicMock,
                   reader_patch: MagicMock,
@@ -369,11 +370,12 @@ class TestCmd:
             list_deployments_in_markdown_table_patch.assert_called_once()
         else:
             mock_reader_instance.get_all_deployments.assert_called_once()
+
     @staticmethod
     @pytest.mark.parametrize("exc", [None, InvalidDeploymentType(), ValueError()])
-    @patch("tomodo.cmd.Reader")
-    @patch("tomodo.cmd.Provisioner")
-    @patch("tomodo.cmd.is_docker_running")
+    @patch("tomodo.cli.provision.Reader")
+    @patch("tomodo.cli.provision.Provisioner")
+    @patch("tomodo.common.util.is_docker_running")
     def test_provision(docker_running_patch: MagicMock,
                        provisioner_patch: MagicMock,
                        reader_patch: MagicMock,
@@ -387,7 +389,7 @@ class TestCmd:
             mock_provisioner_instance.provision.return_value = None
         else:
             mock_provisioner_instance.provision.side_effect = exc
-        result = CliRunner().invoke(cli, ["provision", "--sharded"])
+        result = CliRunner().invoke(provision_cli, ["sharded"])
         mock_provisioner_instance.provision.assert_called_once()
         assert result.exit_code == (1 if exc else 0)
 
@@ -411,7 +413,7 @@ class TestCmd:
         ]
     )
     @patch("tomodo.cmd.Reader")
-    @patch("tomodo.cmd.is_docker_running")
+    @patch("tomodo.common.util.is_docker_running")
     def test_describe(docker_running_patch: MagicMock,
                       reader_patch: MagicMock,
                       fmt: str,

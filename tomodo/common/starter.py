@@ -2,7 +2,7 @@ import logging
 
 import docker
 
-from tomodo.common.models import ReplicaSet, ShardedCluster, Mongod
+from tomodo.common.models import ReplicaSet, ShardedCluster, Mongod, AtlasDeployment
 from tomodo.common.reader import Reader
 
 logger = logging.getLogger("rich")
@@ -16,13 +16,13 @@ class Starter:
 
     def start_deployment(self, name: str):
         deployment = self.reader.get_deployment_by_name(name, include_stopped=True)
-        logger.info("This action will start the '%s' deployment")
+        logger.info("This action will start the '%s' deployment", name)
         if isinstance(deployment, ReplicaSet):
             for member in deployment.members:
                 logger.info("Starting container %s", member.container_id)
                 self.docker_client.containers.get(member.container_id).start()
             logger.info("Deployment %s is starting up", name)
-        if isinstance(deployment, ShardedCluster):
+        elif isinstance(deployment, ShardedCluster):
             for member in deployment.config_svr_replicaset.members:
                 logger.info("Starting config server replica set member in container %s", member.container_id)
                 self.docker_client.containers.get(member.container_id).start()
@@ -33,6 +33,11 @@ class Starter:
                 for member in shard.members:
                     logger.info("Starting shard replica set member in container %s", member.container_id)
                     self.docker_client.containers.get(member.container_id).start()
-        if isinstance(deployment, Mongod):
+        elif isinstance(deployment, AtlasDeployment):
+            logger.warning("Currently, local Atlas deployments cannot be stopped and can therefore not be restarted "
+                           "properly. Expect this action to have undesired side-effects.")
+            logger.info("Starting container %s", deployment.container_id)
+            self.docker_client.containers.get(deployment.container_id).start()
+        elif isinstance(deployment, Mongod):
             logger.info("Starting container %s", deployment.container_id)
             self.docker_client.containers.get(deployment.container_id).start()

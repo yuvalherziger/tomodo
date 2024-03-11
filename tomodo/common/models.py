@@ -149,7 +149,8 @@ class Mongod(Deployment):
             host_data_dir=details.get("tomodo-data-dir"),
             container_data_dir=details.get("tomodo-container-data-dir"),
             is_arbiter=details.get("tomodo-arbiter") == "1",
-            container=container
+            container=container,
+            deployment_type="Standalone"
         )
         mongod.mongo_version = mongo_version
         mongod.last_known_state = "running" if container.status == "running" else "stopped"
@@ -275,6 +276,31 @@ class ReplicaSet(Deployment):
             replica_set.last_known_state = "stopped"
         replica_set.mongo_version = mongo_version
         return replica_set
+
+
+class AtlasDeployment(Mongod):
+    deployment_type = "Atlas Deployment"
+
+    @staticmethod
+    def from_container_details(details: Dict) -> "AtlasDeployment":
+        mongod = Mongod.from_container_details(details=details)
+        atlas_depl = AtlasDeployment(
+            port=mongod.port,
+            hostname=mongod.hostname,
+            name=mongod.name,
+            container_id=mongod.container_id,
+            container=mongod.container,
+            deployment_type="Atlas Deployment"
+        )
+        atlas_depl.mongo_version = details.get("tomodo-mongo-version")
+        atlas_depl.last_known_state = "running" if mongod.container.status == "running" else "stopped"
+        return atlas_depl
+
+    def stop(self, cleaner=None) -> None:
+        raise NotImplementedError("Stopping and restarting Atlas deployments is currently not supported")
+
+    def start(self, starter=None) -> None:
+        raise NotImplementedError("Stopping and restarting Atlas deployments is currently not supported")
 
 
 class Shard(ReplicaSet):

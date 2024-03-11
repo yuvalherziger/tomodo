@@ -13,6 +13,7 @@ from rich.syntax import Syntax
 from ruamel.yaml import YAML
 
 from tomodo import TOMODO_VERSION
+from tomodo.cli import provision
 from tomodo.common.cleaner import Cleaner
 from tomodo.common.config import ProvisionerConfig
 from tomodo.common.errors import DeploymentNotFound, TomodoError
@@ -20,7 +21,7 @@ from tomodo.common.models import Deployment
 from tomodo.common.provisioner import Provisioner
 from tomodo.common.reader import Reader, list_deployments_in_markdown_table
 from tomodo.common.starter import Starter
-from tomodo.common.util import AnonymizingFilter, is_docker_running
+from tomodo.common.util import AnonymizingFilter, check_docker
 
 console = Console()
 yaml = YAML()
@@ -55,12 +56,6 @@ class Replicas(str, Enum):
     SEVEN = 7
 
 
-def check_docker():
-    if not is_docker_running():
-        logger.error("The Docker daemon isn't running")
-        exit(1)
-
-
 @cli.command(help="Print tomodo's version")
 def version():
     docker_ver = docker.from_env().version()
@@ -73,111 +68,7 @@ def version():
     })
 
 
-@cli.command(
-    help="Provision a MongoDB deployment",
-    no_args_is_help=True
-)
-def provision(
-        standalone: bool = typer.Option(
-            default=False,
-            help="Provision a MongoDB standalone instance"
-        ),
-        replica_set: bool = typer.Option(
-            default=False,
-            help="Provision a MongoDB replica set"
-        ),
-        sharded: bool = typer.Option(
-            default=False,
-            help="Provision a MongoDB sharded cluster"
-        ),
-        replicas: Replicas = typer.Option(
-            default=Replicas.THREE.value,
-            help="The number of replica set nodes to provision"
-        ),
-        shards: int = typer.Option(
-            default=2,
-            help="The number of shards to provision in a sharded cluster"
-        ),
-        arbiter: bool = typer.Option(
-            default=False,
-            help="Add an arbiter node to a replica set"
-        ),
-        name: str = typer.Option(
-            default=None,
-            help="The deployment's name; auto-generated if not provided"
-        ),
-        priority: bool = typer.Option(
-            default=False,
-            help="Priority (currently ignored)"
-        ),
-        port: int = typer.Option(
-            default=27017,
-            min=0,
-            max=65535,
-            help="The deployment's start port"
-        ),
-        config_servers: int = typer.Option(
-            default=1,
-            help="The number of config server replica set nodes"
-        ),
-        mongos: int = typer.Option(
-            default=1,
-            min=1,
-            help="The number of mongos routers"
-        ),
-        auth: bool = typer.Option(
-            default=False,
-            help="Whether to enable authentication (currently ignored)"
-        ),
-        username: str = typer.Option(
-            default=None,
-            help="Optional authentication username"
-        ),
-        password: str = typer.Option(
-            default=None,
-            help="Optional authentication password"
-        ),
-        auth_db: str = typer.Option(
-            default=None,
-            help="Authorization DB (currently ignored)"
-        ),
-        auth_roles: str = typer.Option(
-            default="dbAdminAnyDatabase readWriteAnyDatabase userAdminAnyDatabase clusterAdmin",
-            help="Default authentication roles (currently ignored)"
-        ),
-        image_repo: str = typer.Option(
-            default="mongo",
-            help="The MongoDB image name/repo"
-        ),
-        image_tag: str = typer.Option(
-            default="latest",
-            help="The MongoDB image tag, which determines the MongoDB version to install"
-        ),
-        network_name: str = typer.Option(
-            default="mongo_network",
-            help="The Docker network to provision the deployment in; will create a new one or use an existing one "
-                 "with the same name if such network exists"
-        )
-):
-    check_docker()
-    config = ProvisionerConfig(
-        standalone=standalone, replica_set=replica_set, replicas=int(replicas.value), shards=shards,
-        arbiter=arbiter, name=name, priority=priority,
-        sharded=sharded, port=port, config_servers=config_servers, mongos=mongos,
-        auth=auth, username=username, password=password, auth_db=auth_db,
-        auth_roles=auth_roles.split(" "), image_repo=image_repo, image_tag=image_tag,
-        network_name=network_name
-    )
-    provisioner = Provisioner(config=config)
-    try:
-        provisioner.provision(deployment_getter=Reader().get_deployment_by_name)
-    except TomodoError as e:
-        logger.error(str(e))
-        exit(1)
-    except Exception as e:
-        logger.exception("Could not provision your deployment - an error has occurred")
-        exit(1)
-
+cli.add_typer(provision.cli, name="provision")
 
 @cli.command(
     help="Describe running deployments",
@@ -394,7 +285,6 @@ def list_(
     reader = Reader()
     try:
         deployments: Dict[str, Deployment] = reader.get_all_deployments(include_stopped=not exclude_stopped)
-        print(deployments)
         if output == OutputFormat.JSON:
             console.print_json(data={name: deployments[name].as_dict() for name in deployments.keys()})
         elif output == OutputFormat.YAML:

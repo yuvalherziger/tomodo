@@ -14,7 +14,7 @@ from rich.console import Console
 
 from tomodo.common.config import ProvisionerConfig
 from tomodo.common.errors import InvalidShellException
-from tomodo.common.models import Mongod
+from tomodo.common.models import Mongod, AtlasDeployment
 
 io = io.StringIO()
 
@@ -57,7 +57,7 @@ def with_retry(max_attempts: int = 5, delay: int = 1, retryable_exc: Tuple[Type[
                     return func(*args, **kwargs)
                 except retryable_exc as e:
                     ex = e
-                    logger.info("%s: Attempt %d/%d (%s)", func.__name__, attempts + 1, max_attempts, str(e))
+                    logger.debug("%s: Attempt %d/%d (%s)", func.__name__, attempts + 1, max_attempts, str(e))
                     attempts += 1
                     time.sleep(delay)
             logger.error("%s failed after %d attempts", func.__name__, max_attempts)
@@ -124,27 +124,34 @@ def run_mongo_shell_command(mongo_cmd: str, mongod: Mongod, shell: str = "mongos
     container: Container = docker_client.containers.get(mongod.container_id)
     if not container:
         raise Exception(f"Could not find the container '{mongod.container_id}'")
-
+    hostname = mongod.hostname
+    is_atlas = isinstance(mongod, AtlasDeployment)
     # First check if the desired MongoDB shell exists in the container:
-    shell_check_exit_code, _ = container.exec_run(cmd=["which", shell])
-    if shell_check_exit_code != 0:
-        if shell != "mongo":
-            logger.debug(
-                "The '%s' shell could not be found in the container. Checking for the legacy 'mongo' shell",
-                shell)
-            shell = "mongo"
-            shell_check_exit_code, _ = container.exec_run(cmd=["which", shell])
+    if is_atlas:
+        shell = "mongosh"
+        hostname = "localhost"
+    else:
+        shell_check_exit_code, _ = container.exec_run(cmd=["which", shell])
         if shell_check_exit_code != 0:
-            logger.error("The '%s' shell could not be found in the container.", shell)
-            # No valid shell --> error out:
-            raise InvalidShellException
+            if shell != "mongo":
+                logger.debug(
+                    "The '%s' shell could not be found in the container. Checking for the legacy 'mongo' shell",
+                    shell)
+                shell = "mongo"
+                shell_check_exit_code, _ = container.exec_run(cmd=["which", shell])
+            if shell_check_exit_code != 0:
+                logger.error("The '%s' shell could not be found in the container.", shell)
+                # No valid shell --> error out:
+                raise InvalidShellException
     # If the output needs to be JSON-serialized by the tool, it's required to stringify it with mongosh:
     if shell == "mongosh" and serialize_json:
         mongo_cmd = f"JSON.stringify({mongo_cmd})"
-    cmd = [shell, mongod.hostname, "--quiet", "--norc", "--eval", mongo_cmd]
+    cmd = [shell, hostname, "--quiet", "--norc", "--eval", mongo_cmd]
     if config and config.is_auth_enabled:
         cmd.extend(["--username", config.username])
         cmd.extend(["--password", config.password])
+    if is_atlas:
+        cmd.extend(["--port", str(mongod.port)])
     command_exit_code: int
     command_output: bytes
     command_exit_code, command_output = container.exec_run(cmd=cmd)
@@ -177,3 +184,9 @@ def is_docker_running():
         return True
     except (APIError, DockerException):
         return False
+
+
+def check_docker():
+    if not is_docker_running():
+        logger.error("The Docker daemon isn't running")
+        exit(1)

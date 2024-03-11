@@ -587,7 +587,7 @@ class TestProvisioner:
         config = ProvisionerConfig(standalone=True)
         run_mongo_shell_command_patch.side_effect = [(0, "A", None), (0, "0", None), (0, "1", None)]
         provisioner = Provisioner(config=config)
-        with caplog.at_level(logging.INFO):
+        with caplog.at_level(logging.DEBUG):
             provisioner.wait_for_mongod_readiness(mongod=mongod)
         assert f"Server {mongod.name} is not ready to accept connections" in caplog.text
         assert f"Server {mongod.name} is ready to accept connections" in caplog.text

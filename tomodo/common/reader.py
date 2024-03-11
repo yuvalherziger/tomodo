@@ -8,7 +8,7 @@ from docker.models.containers import Container
 from rich.console import Console
 
 from tomodo.common.errors import DeploymentNotFound, InvalidDeploymentType
-from tomodo.common.models import Deployment, Mongod, ReplicaSet, ShardedCluster
+from tomodo.common.models import Deployment, Mongod, ReplicaSet, ShardedCluster, AtlasDeployment
 
 io = io.StringIO()
 
@@ -20,6 +20,9 @@ SOURCE_VALUE = "tomodo"
 STANDALONE = "Standalone"
 REPLICA_SET = "Replica Set"
 SHARDED_CLUSTER = "Sharded Cluster"
+ATLAS_DEPLOYMENT = "Atlas Deployment"
+
+AnyDeployment = Union[Mongod, ReplicaSet, ShardedCluster, AtlasDeployment]
 
 
 def transform_deployment_type(depl: str) -> str:
@@ -30,6 +33,8 @@ def transform_deployment_type(depl: str) -> str:
         return REPLICA_SET
     if res == "sharded-cluster":
         return SHARDED_CLUSTER
+    if res == "atlas-deployment":
+        return ATLAS_DEPLOYMENT
     raise InvalidDeploymentType
 
 
@@ -45,15 +50,16 @@ def _key_by(list_of_dicts: List[Dict], attr: str) -> Dict[str, List[Dict]]:
     return result
 
 
-def marshal_deployment(components: List[Dict]) -> Deployment:
+def marshal_deployment(components: List[Dict]) -> AnyDeployment:
     if len(components) == 0:
         raise DeploymentNotFound()
     deployment_type = transform_deployment_type(components[0].get("tomodo-type"))
-
     if deployment_type == "Replica Set":
         return ReplicaSet.from_container_details(details=components)
     elif deployment_type == "Sharded Cluster":
         return ShardedCluster.from_container_details(details=components)
+    elif deployment_type == ATLAS_DEPLOYMENT:
+        return AtlasDeployment.from_container_details(details=components[0])
     elif deployment_type == "Standalone":
         return Mongod.from_container_details(details=components[0])
 
@@ -71,7 +77,10 @@ def _read_mongo_version_from_container(container: Container) -> str:
 def extract_details_from_containers(containers) -> List[Dict]:
     container_details = []
     for container in containers:
-        mongo_version = _read_mongo_version_from_container(container)
+        if container.labels.get("tomodo-type") == ATLAS_DEPLOYMENT:
+            mongo_version = container.labels.get("tomodo-mongodb-version")
+        else:
+            mongo_version = _read_mongo_version_from_container(container)
         container_details.append({
             **container.labels,
             "tomodo-container-id": container.short_id,
@@ -128,7 +137,6 @@ class Reader:
             for deployment_name in unmarshalled.keys()
         }
 
-    def get_deployment_by_name(self, name: str, include_stopped: bool = False) -> Union[
-        Mongod, ReplicaSet, ShardedCluster]:
+    def get_deployment_by_name(self, name: str, include_stopped: bool = False) -> AnyDeployment:
         container_details = self._get_containers(name=name, include_stopped=include_stopped)
         return marshal_deployment(container_details)

@@ -6,7 +6,7 @@ from typing import Dict
 import docker
 from docker.models.containers import Container
 
-from tomodo.common.models import ReplicaSet, ShardedCluster, Mongod, Deployment
+from tomodo.common.models import ReplicaSet, ShardedCluster, Mongod, Deployment, AtlasDeployment
 from tomodo.common.reader import Reader
 
 logger = logging.getLogger("rich")
@@ -25,7 +25,7 @@ class Cleaner:
             for member in deployment.members:
                 logger.info("Stopping replica set member in container %s", member.container_id)
                 self._stop_container(member.container_id)
-        if isinstance(deployment, ShardedCluster):
+        elif isinstance(deployment, ShardedCluster):
             for router in deployment.routers:
                 logger.info("Stopping mongos router in container %s", router.container_id)
                 self._stop_container(router.container_id)
@@ -36,7 +36,10 @@ class Cleaner:
             for member in deployment.config_svr_replicaset.members:
                 logger.info("Stopping config server replica set member in container %s", member.container_id)
                 self._stop_container(member.container_id)
-        if isinstance(deployment, Mongod):
+        elif isinstance(deployment, AtlasDeployment):
+            logger.error("Currently, it's not possible to stop Atlas local deployments with tomodo. "
+                         f"If you'd like to stop it, run 'tomodo remove --name {deployment.name}'")
+        elif isinstance(deployment, Mongod):
             logger.info("Stopping standalone instance in container %s", deployment.container_id)
             self._stop_container(deployment.container_id)
 
@@ -61,7 +64,7 @@ class Cleaner:
             for member in deployment.members:
                 logger.info("Deleting replica set member in container %s", member.container_id)
                 self._delete_container(member.container_id, member.host_data_dir)
-        if isinstance(deployment, ShardedCluster):
+        elif isinstance(deployment, ShardedCluster):
             for router in deployment.routers:
                 logger.info("Deleting mongos router in container %s", router.container_id)
                 self._delete_container(router.container_id)
@@ -72,7 +75,10 @@ class Cleaner:
             for member in deployment.config_svr_replicaset.members:
                 logger.info("Deleting config server replica set member in container %s", member.container_id)
                 self._delete_container(member.container_id, member.host_data_dir)
-        if isinstance(deployment, Mongod):
+        elif isinstance(deployment, AtlasDeployment):
+            logger.info("Deleting Atlas deployment in container %s", deployment.container_id)
+            self._delete_container(deployment.container_id)
+        elif isinstance(deployment, Mongod):
             logger.info("Deleting standalone instance in container %s", deployment.container_id)
             self._delete_container(deployment.container_id, deployment.host_data_dir)
 

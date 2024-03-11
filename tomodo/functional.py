@@ -1,7 +1,7 @@
 from typing import List, Dict, Union
 
 from tomodo import ProvisionerConfig, Provisioner, Reader
-from tomodo.common.models import Mongod, ReplicaSet, ShardedCluster
+from tomodo.common.models import Mongod, ReplicaSet, ShardedCluster, AtlasDeployment
 
 
 def provision_standalone_instance(name: str = None,
@@ -39,6 +39,42 @@ def provision_standalone_instance(name: str = None,
         image_repo=image_repo,
         image_tag=image_tag,
         network_name=network_name
+    )
+    provisioner = Provisioner(config=config)
+    reader = Reader()
+    return provisioner.provision(deployment_getter=reader.get_deployment_by_name)
+
+
+def provision_atlas_instance(name: str = None,
+                             port: int = 27017, version: str = "7.0",
+                             username: str = None, password: str = None,
+                             image_repo: str = "mongo",
+                             image_tag: str = "latest",
+                             network_name: str = "mongo_network") -> AtlasDeployment:
+    """
+    Provisions and returns a standalone instance of MongoDB
+
+    :param name:            The deployment's name; auto-generated if not provided
+    :param port:            The deployment port
+    :param version          The MongoDB version to install
+    :param username:        Optional authentication username
+    :param password:        Optional authentication password
+    :param image_repo:      The MongoDB Atlas CLI image name/repo
+    :param image_tag:       The MongoDB Atlas CLI  image tag
+    :param network_name:    The Docker network to provision the deployment in; will create a new one or use an existing
+                            one with the same name if such network exists
+    :return:                AtlasDeployment instance
+    """
+    config = ProvisionerConfig(
+        atlas=True,
+        name=name,
+        port=port,
+        username=username,
+        password=password,
+        image_repo=image_repo,
+        image_tag=image_tag,
+        network_name=network_name,
+        atlas_version=version
     )
     provisioner = Provisioner(config=config)
     reader = Reader()
