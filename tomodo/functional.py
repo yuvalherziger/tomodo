@@ -48,8 +48,8 @@ def provision_standalone_instance(name: str = None,
 def provision_atlas_instance(name: str = None,
                              port: int = 27017, version: str = "7.0",
                              username: str = None, password: str = None,
-                             image_repo: str = "mongo",
-                             image_tag: str = "latest",
+                             image_repo: str = "ghcr.io/yuviherziger/tomodo",
+                             image_tag: str = "main",
                              network_name: str = "mongo_network") -> AtlasDeployment:
     """
     Provisions and returns a standalone instance of MongoDB
