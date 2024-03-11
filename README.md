@@ -116,99 +116,44 @@ Create a deployment with the `provision` command. For example, here's how you cr
 instance with zero configuration:
 
 ```shell
-tomodo provision --standalone
+tomodo provision standalone
 ```
 
-To create a replica set with zero configuration, run the `provision` command in the following way:
+To create a replica set with zero configuration, run the following command:
 
 ```shell
-tomodo provision --replica-set
+tomodo provision replica-set
 ```
 
-To create a sharded cluster with zero configuration, run the `provision` command in the following way:
+To create a sharded cluster with zero configuration, run the following command:
 
 ```shell
-tomodo provision --sharded
+tomodo provision sharded
+```
+
+To create a local Atlas deployment (a single-node replica set) with zero configuration, run the following command:
+
+```shell
+tomodo provision atlas
 ```
 
 Take a look at the `provision` command's help page to read the full set of options
-with `tomodo provision --help`:
+with `tomodo provision --help`.
 
 ```
- Usage: tomodo provision [OPTIONS]
+ Usage: tomodo provision [OPTIONS] COMMAND [ARGS]...
 
  Provision a MongoDB deployment
 
-╭─ Options ───────────────────────────────────────────────────────────────────────────────────────╮
-│ --standalone        --no-standalone                                 Provision a MongoDB         │
-│                                                                     standalone instance         │
-│                                                                     [default: no-standalone]    │
-│ --replica-set       --no-replica-set                                Provision a MongoDB replica │
-│                                                                     set                         │
-│                                                                     [default: no-replica-set]   │
-│ --sharded           --no-sharded                                    Provision a MongoDB sharded │
-│                                                                     cluster                     │
-│                                                                     [default: no-sharded]       │
-│ --replicas                              [1|3|5|7]                   The number of replica set   │
-│                                                                     nodes to provision          │
-│                                                                     [default: 3]                │
-│ --shards                                INTEGER                     The number of shards to     │
-│                                                                     provision in a sharded      │
-│                                                                     cluster                     │
-│                                                                     [default: 2]                │
-│ --arbiter           --no-arbiter                                    Add an arbiter node to a    │
-│                                                                     replica set                 │
-│                                                                     [default: no-arbiter]       │
-│ --name                                  TEXT                        The deployment's name;      │
-│                                                                     auto-generated if not       │
-│                                                                     provided                    │
-│                                                                     [default: None]             │
-│ --priority          --no-priority                                   Priority (currently         │
-│                                                                     ignored)                    │
-│                                                                     [default: no-priority]      │
-│ --port                                  INTEGER RANGE               The deployment's start port │
-│                                         [0<=x<=65535]               [default: 27017]            │
-│ --config-servers                        INTEGER                     The number of config server │
-│                                                                     replica set nodes           │
-│                                                                     [default: 1]                │
-│ --mongos                                INTEGER RANGE [x>=1]        The number of mongos        │
-│                                                                     routers                     │
-│                                                                     [default: 1]                │
-│ --auth              --no-auth                                       Whether to enable           │
-│                                                                     authentication (currently   │
-│                                                                     ignored)                    │
-│                                                                     [default: no-auth]          │
-│ --username                              TEXT                        Optional authentication     │
-│                                                                     username                    │
-│                                                                     [default: None]             │
-│ --password                              TEXT                        Optional authentication     │
-│                                                                     password                    │
-│                                                                     [default: None]             │
-│ --auth-db                               TEXT                        Authorization DB (currently │
-│                                                                     ignored)                    │
-│                                                                     [default: None]             │
-│ --auth-roles                            TEXT                        Default authentication      │
-│                                                                     roles (currently ignored)   │
-│                                                                     [default:                   │
-│                                                                     dbAdminAnyDatabase          │
-│                                                                     readWriteAnyDatabase        │
-│                                                                     userAdminAnyDatabase        │
-│                                                                     clusterAdmin]               │
-│ --image-repo                            TEXT                        The MongoDB image name/repo │
-│                                                                     [default: mongo]            │
-│ --image-tag                             TEXT                        The MongoDB image tag,      │
-│                                                                     which determines the        │
-│                                                                     MongoDB version to install  │
-│                                                                     [default: latest]           │
-│ --network-name                          TEXT                        The Docker network to       │
-│                                                                     provision the deployment    │
-│                                                                     in; will create a new one   │
-│                                                                     or use an existing one with │
-│                                                                     the same name if such       │
-│                                                                     network exists              │
-│                                                                     [default: mongo_network]    │
-│ --help                                                              Show this message and exit. │
-╰─────────────────────────────────────────────────────────────────────────────────────────────────
+╭─ Options ──────────────────────────────────────────────────────────────╮
+│ --help          Show this message and exit.                            │
+╰────────────────────────────────────────────────────────────────────────╯
+╭─ Commands ─────────────────────────────────────────────────────────────╮
+│ atlas            Provision a local MongoDB Atlas deployment            │
+│ replica-set      Provision a MongoDB replica set deployment            │
+│ sharded          Provision a MongoDB sharded cluster                   │
+│ standalone       Provision a standalone MongoDB deployment             │
+╰────────────────────────────────────────────────────────────────────────╯
 ```
 
 ### Describe Deployments
@@ -286,21 +231,24 @@ from typing import Dict
 
 from tomodo import functional as tfunc
 from tomodo.common.errors import DeploymentNotFound
-from tomodo.common.models import Deployment, Mongod, ReplicaSet, ShardedCluster
+from tomodo.common.models import AtlasDeployment, Deployment, Mongod, ReplicaSet, ShardedCluster
 
 # Create a standalone instance:
 mongod: Mongod = tfunc.provision_standalone_instance(port=1000)
 
+# Create an Atlas instance:
+atlas_depl: AtlasDeployment = tfunc.provision_atlas_instance(port=2000)
+
 # Create a replica set:
-replica_set: ReplicaSet = tfunc.provision_replica_set(port=2000, replicas=3)
+replica_set: ReplicaSet = tfunc.provision_replica_set(port=3000, replicas=3)
 
 # Create a sharded cluster:
-sh_cluster: ShardedCluster = tfunc.provision_sharded_cluster(port=3000, shards=2, config_servers=3, mongos=2)
+sh_cluster: ShardedCluster = tfunc.provision_sharded_cluster(port=4000, shards=2, config_servers=3, mongos=2)
 
 # Stop a deployment:
 mongod.stop()
 
-# Restart a deployment:
+# Start a stopped deployment:
 mongod.start()
 
 # Remove a deployment permanently:

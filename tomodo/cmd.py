@@ -21,7 +21,7 @@ from tomodo.common.models import Deployment
 from tomodo.common.provisioner import Provisioner
 from tomodo.common.reader import Reader, list_deployments_in_markdown_table
 from tomodo.common.starter import Starter
-from tomodo.common.util import AnonymizingFilter, is_docker_running, check_docker
+from tomodo.common.util import AnonymizingFilter, check_docker
 
 console = Console()
 yaml = YAML()
@@ -285,7 +285,6 @@ def list_(
     reader = Reader()
     try:
         deployments: Dict[str, Deployment] = reader.get_all_deployments(include_stopped=not exclude_stopped)
-        print(deployments)
         if output == OutputFormat.JSON:
             console.print_json(data={name: deployments[name].as_dict() for name in deployments.keys()})
         elif output == OutputFormat.YAML:

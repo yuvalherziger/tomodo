@@ -104,6 +104,22 @@ def mongod(standalone_container: Container) -> models.Mongod:
 
 
 @pytest.fixture
+def atlas_deployment(standalone_container: Container) -> models.AtlasDeployment:
+    depl_name = "unit-test-atlas"
+    mongo_version = "7.0.0"
+    # TODO: Create Atlas container fixture.
+    return models.AtlasDeployment(
+        port=27017,
+        name=depl_name,
+        hostname=depl_name,
+        container_id=secrets.token_hex(32),
+        last_known_state="running",
+        mongo_version=mongo_version,
+        container=standalone_container
+    )
+
+
+@pytest.fixture
 def replica_set(replica_set_containers: List[Container]) -> models.ReplicaSet:
     depl_name = "unit-test-rs"
     mongo_version = "6.0.0"

@@ -18,6 +18,11 @@ class Replicas(str, Enum):
     SEVEN = 7
 
 
+class AtlasVersion(str, Enum):
+    SIX_OH = "6.0"
+    SEVEN_OH = "7.0"
+
+
 def _name() -> str:
     return typer.Option(
         default=None,
@@ -45,7 +50,7 @@ def _network_name() -> str:
 def _image_repo(default: str = "mongo") -> str:
     return typer.Option(
         default=default,
-        help="The MongoDB image name/repo"
+        help="The MongoDB image name/repo (NOTE: you probably don't want to change it)"
     )
 
 
@@ -69,8 +74,7 @@ def _provision(config: ProvisionerConfig) -> None:
 
 
 @cli.command(
-    help="Provision a standalone MongoDB deployment",
-    no_args_is_help=True
+    help="Provision a standalone MongoDB deployment"
 )
 def standalone(
         name: str = _name(),
@@ -111,17 +115,12 @@ def standalone(
 
 
 @cli.command(
-    help="Provision a MongoDB replica set deployment",
-    no_args_is_help=True
+    help="Provision a MongoDB replica set deployment"
 )
 def replica_set(
         replicas: Replicas = typer.Option(
             default=Replicas.THREE.value,
             help="The number of replica set nodes to provision"
-        ),
-        shards: int = typer.Option(
-            default=2,
-            help="The number of shards to provision in a sharded cluster"
         ),
         arbiter: bool = typer.Option(
             default=False,
@@ -159,7 +158,7 @@ def replica_set(
 ):
     check_docker()
     config = ProvisionerConfig(
-        replica_set=True, replicas=int(replicas.value), shards=shards,
+        replica_set=True, replicas=int(replicas.value),
         arbiter=arbiter, name=name, priority=priority, port=port,
         auth=auth, username=username, password=password, auth_db=auth_db,
         auth_roles=auth_roles.split(" "), image_repo=image_repo, image_tag=image_tag,
@@ -169,8 +168,7 @@ def replica_set(
 
 
 @cli.command(
-    help="Provision a MongoDB sharded cluster",
-    no_args_is_help=True
+    help="Provision a MongoDB sharded cluster"
 )
 def sharded(
         replicas: Replicas = typer.Option(
@@ -237,15 +235,10 @@ def sharded(
 
 
 @cli.command(
-    help="Provision a local MongoDB Atlas deployment",
-    no_args_is_help=True
+    help="Provision a local MongoDB Atlas deployment"
 )
 def atlas(
         name: str = _name(),
-        priority: bool = typer.Option(
-            default=False,
-            help="Priority (currently ignored)"
-        ),
         port: int = _port(),
         username: str = typer.Option(
             help="Authentication username",
@@ -255,15 +248,25 @@ def atlas(
             help="Authentication password",
             default="admin"
         ),
-        image_repo: str = _image_repo(default="ghcr.io/yuviherziger/tomodo:latest"),
-        image_tag: str = _image_tag(),
+        version: AtlasVersion = typer.Option(
+            default=AtlasVersion.SEVEN_OH.value,
+            help="The MongoDB version to install"
+        ),
+        image_repo: str = typer.Option(
+            default="ghcr.io/yuviherziger/tomodo",
+            help="The MongoDB Atlas image name/repo (NOTE: you probably don't want to change it)"
+        ),
+        image_tag: str = typer.Option(
+            default="latest",
+            help="The MongoDB Atlas image tag (NOTE: you probably don't want to change it)"
+        ),
         network_name: str = _network_name()
 ):
     check_docker()
     config = ProvisionerConfig(
-        name=name, priority=priority, atlas=True, port=port,
+        name=name, atlas=True, port=port,
         username=username, password=password,
         image_repo=image_repo, image_tag=image_tag,
-        network_name=network_name
+        network_name=network_name, atlas_version=str(version.value)
     )
     _provision(config=config)

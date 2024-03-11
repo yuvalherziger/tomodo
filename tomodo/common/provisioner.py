@@ -50,7 +50,7 @@ class Provisioner:
         except Exception:
             raise
 
-    def provision(self, deployment_getter: callable) -> Union[Mongod, ReplicaSet, ShardedCluster]:
+    def provision(self, deployment_getter: callable) -> Union[Mongod, ReplicaSet, ShardedCluster, AtlasDeployment]:
         if sum([self.config.standalone, self.config.replica_set, self.config.sharded, self.config.atlas]) != 1:
             logger.error("Exactly one of the following has to be specified: standalone, replica-set, sharded, or atlas")
             raise InvalidConfiguration
@@ -191,6 +191,7 @@ tomodo describe --name {self.config.name}
                 container=mongos_container
             )
             mongos.container_id = mongos_container.short_id
+            logger.info("Checking the readiness of %s", mongos.name)
             self.wait_for_mongod_readiness(mongod=mongos)
             sharded_cluster.routers.append(mongos)
             last_mongos_port = mongos_port
@@ -225,6 +226,8 @@ tomodo describe --name {self.config.name}
             hostname=self.config.name
         )
         logger.info("This action will provision a local MongoDB Atlas instance")
+        logger.info("Please note: An Atlas deployment might take a little longer to provision, as "
+                    "the MongoDB binaries are downloaded lazily in the container's runtime")
         if not is_port_range_available((atlas_depl.port,)):
             raise PortsTakenException
         container = self.create_atlas_container(
@@ -234,7 +237,8 @@ tomodo describe --name {self.config.name}
         atlas_depl.container = container
         atlas_depl.container_id = container.short_id
         logger.info("MongoDB container created [id: %s]", atlas_depl.container_id)
-        self.wait_for_mongod_readiness(mongod=atlas_depl)
+        logger.info("Checking the readiness of %s", atlas_depl.name)
+        self.wait_for_atlas_deployment_readiness(depl=atlas_depl)
         return atlas_depl
 
     def provision_replica_set(self, replicaset: ReplicaSet, config_svr: bool = False, sh_cluster: bool = False,
@@ -274,6 +278,7 @@ tomodo describe --name {self.config.name}
             member.container_data_dir = container_data_dir
             logger.info("MongoDB container created [id: %s]", member.container_id)
 
+        logger.info("Checking the readiness of %s", replicaset.members[0].name)
         self.wait_for_mongod_readiness(mongod=replicaset.members[0])
         self.init_replica_set(replicaset, arbiter=self.config.arbiter)
         return replicaset
@@ -291,6 +296,7 @@ tomodo describe --name {self.config.name}
         mongod.host_data_dir = host_data_dir
         mongod.container_data_dir = container_data_dir
         logger.info("MongoDB container created [id: %s]", mongod.container_id)
+        logger.info("Checking the readiness of %s", mongod.name)
         self.wait_for_mongod_readiness(mongod=mongod)
         return mongod
 
@@ -302,6 +308,7 @@ tomodo describe --name {self.config.name}
                 "db.adminCommand({ setDefaultRWConcern: 1, defaultWriteConcern: { 'w': %s } })" % str(rc)
             )
         for m in replicaset.members[1:len(replicaset.members)]:
+            logger.info("Checking the readiness of %s", m.name)
             self.wait_for_mongod_readiness(mongod=m)
             if m.is_arbiter:
                 init_scripts.append(f"rs.addArb('{m.name}:{m.port}')")
@@ -312,9 +319,8 @@ tomodo describe --name {self.config.name}
         for script in init_scripts:
             run_mongo_shell_command(mongo_cmd=script, mongod=first_mongod, config=self.config)
 
-    @with_retry(max_attempts=60, delay=1, retryable_exc=(APIError, Exception))
-    def wait_for_mongod_readiness(self, mongod: Mongod):
-        logger.info("Checking the readiness of %s", mongod.name)
+    def wait_for_readiness(self, mongod: Mongod):
+        logger.debug("Checking the readiness of %s", mongod.name)
         mongo_cmd = "db.runCommand({ping: 1}).ok"
         exit_code, output, _ = run_mongo_shell_command(mongo_cmd=mongo_cmd, mongod=mongod)
 
@@ -323,14 +329,29 @@ tomodo describe --name {self.config.name}
         except:
             is_ready = False
         if not is_ready:
-            logger.info("Server %s is not ready to accept connections", mongod.name)
+            logger.debug("Server %s is not ready to accept connections", mongod.name)
             raise Exception("Server isn't ready")
         logger.info("Server %s is ready to accept connections", mongod.name)
+
+    @with_retry(max_attempts=60, delay=2, retryable_exc=(APIError, Exception))
+    def wait_for_mongod_readiness(self, mongod: Mongod):
+        self.wait_for_readiness(mongod)
+
+    @with_retry(max_attempts=10, delay=10, retryable_exc=(APIError, Exception))
+    def wait_for_atlas_deployment_readiness(self, depl: AtlasDeployment):
+        self.wait_for_readiness(depl)
 
     def create_atlas_container(self, port: int, name: str) -> Container:
         repo = self.config.image_repo
         tag = self.config.image_tag
         image = f"{repo}:{tag}"
+        environment = [
+            f"PORT={port}",
+            f"NAME={name}",
+            f"MDBVERSION={self.config.atlas_version}"
+        ]
+        if self.config.is_auth_enabled:
+            environment.extend([f"USERNAME={self.config.username}", f"PASSWORD={self.config.password}"])
         logger.info("Creating container from '%s'. Port %d will be exposed to your host", image, port)
         networking_config = NetworkingConfig(
             endpoints_config={
@@ -340,11 +361,13 @@ tomodo describe --name {self.config.name}
         return self.docker_client.containers.run(
             f"{repo}:{tag}",
             detach=True,
+            privileged=True,
             ports={f"{port}/tcp": port},
             platform=f"linux/{platform.machine()}",
             network=self.network.id,
             hostname=name,
             name=name,
+            environment=environment,
             networking_config=networking_config,
             labels={
                 "source": "tomodo",
@@ -353,6 +376,7 @@ tomodo describe --name {self.config.name}
                 "tomodo-port": str(port),
                 "tomodo-role": "atlas",
                 "tomodo-type": "Atlas Deployment",
+                "tomodo-mongodb-version": str(self.config.atlas_version),
                 "tomodo-shard-count": str(self.config.shards or 0),
             }
         )
