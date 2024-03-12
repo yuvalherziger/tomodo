@@ -5,6 +5,7 @@ import logging
 import re
 import socket
 import time
+from sys import exit
 from typing import Tuple, Type, Dict, Union, List, Any
 
 import docker
