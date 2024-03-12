@@ -5,7 +5,7 @@ import logging
 import re
 import socket
 import time
-from typing import Tuple, Type, Dict, Union
+from typing import Tuple, Type, Dict, Union, List, Any
 
 import docker
 from docker.errors import APIError, DockerException
@@ -190,3 +190,7 @@ def check_docker():
     if not is_docker_running():
         logger.error("The Docker daemon isn't running")
         exit(1)
+
+
+def split_into_chunks(lst: List[Any], chunk_size: int = 20):
+    return [lst[i:i + chunk_size] for i in range(0, len(lst), chunk_size)]

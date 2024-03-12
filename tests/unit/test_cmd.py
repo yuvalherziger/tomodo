@@ -5,10 +5,12 @@ from unittest.mock import Mock, patch, MagicMock
 
 import pytest
 from _pytest.logging import LogCaptureFixture
+from requests import Response
 from typer.testing import CliRunner
 
 from tomodo import TOMODO_VERSION
 from tomodo.cli.provision import cli as provision_cli
+from tomodo.cli.tags import cli as tags_cli
 from tomodo.cmd import cli
 from tomodo.common.errors import DeploymentNotFound, InvalidDeploymentType
 from tomodo.common.models import Mongod, ReplicaSet
@@ -456,3 +458,80 @@ class TestCmd:
                 mock_reader_instance.describe_all.assert_called_once()
             else:
                 mock_reader_instance.get_all_deployments.assert_called_once()
+
+    @staticmethod
+    @pytest.mark.parametrize(
+        "must_include, must_exclude, group, api_err",
+        [
+            (None, None, True, False),
+            (None, None, False, False),
+            (None, None, False, True),
+        ]
+    )
+    @patch("tomodo.common.tag_manager.requests")
+    def test_list_tags(requests_patch: MagicMock, must_include: str, must_exclude: str, group: bool, api_err: bool):
+        page_one_response = Response()
+
+        page_one_body = {
+            "next": True,
+            "results": [{
+                "name": "5.0"
+            }, {
+                "name": "5.0.1"
+            }, {
+                "name": "5.0.2"
+            }, {
+                "name": "6.0"
+            }, {
+                "name": "6"
+            }, {
+                "name": "6.0.1"
+            }, {
+                "name": "6.0.2"
+            }, {
+                "name": "6.0.3"
+            }, {
+                "name": "7-jammy"
+            }, {
+                "name": "7.0"
+            }, {
+                "name": "7.0.9"
+            }, {
+                "name": "latest"
+            }, {
+                "name": "jammy"
+            }, ]
+        }
+        page_one_response._content = json.dumps(page_one_body).encode('utf-8')
+        page_two_response = Response()
+
+        page_two_body = {
+            "next": None,
+            "results": [{
+                "name": "4.4"
+            }, {
+                "name": "4"
+            }, {
+                "name": "4.0"
+            }]
+        }
+        page_two_response._content = json.dumps(page_two_body).encode('utf-8')
+        page_one_response.status_code = 200
+        if not api_err:
+            page_two_response.status_code = 200
+            requests_patch.get.side_effect = [page_one_response, page_two_response]
+        else:
+            page_two_response.status_code = 429
+            requests_patch.get.side_effect = [page_one_response, page_two_response]
+        args = []
+        if must_include:
+            args.extend(["--must-include", must_include])
+        if must_exclude:
+            args.extend(["--must-exclude", must_exclude])
+        if group:
+            args.extend(["--group"])
+        else:
+            args.extend(["--no-group"])
+        result = CliRunner().invoke(tags_cli, args)
+
+        assert result.exit_code == (0 if not api_err else 1)
