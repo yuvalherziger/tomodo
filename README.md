@@ -31,6 +31,7 @@ and sharded clusters.
     + [Stop Deployments](#stop-deployments)
     + [Start Deployments](#start-deployments)
     + [Remove Deployments](#remove-deployments)
+    + [List Image Tags](#list-tags)
 * [Programmatic Usage](#programmatic-usage)
 
 --- 
@@ -137,7 +138,7 @@ To create a local Atlas deployment (a single-node replica set) with zero configu
 tomodo provision atlas
 ```
 
-Take a look at the `provision` command's help page to read the full set of options
+Take a look at each `provision` command's help page to read the full set of options
 with `tomodo provision --help`.
 
 ```
@@ -219,6 +220,70 @@ tomodo remove --name troubled-narwhal
 
 # Remove all deployments without prompting for confirmation
 tomodo remove --auto-approve
+```
+
+### List Tags
+
+Use the `tags list` command to list the available image tags on Docker Hub.
+
+```shell
+tomodo tags list --must-include jammy --must-exclude windows
+```
+
+Sample output:
+
+```yaml
+7.0:
+  - 7.0.7-rc2-jammy
+  - 7.0.7-rc0-jammy
+  - 7.0.6-jammy
+  - 7.0.5-rc0-jammy
+  - 7.0.5-jammy
+  - 7.0.4-rc0-jammy
+  - 7.0.4-jammy
+  - 7.0.3-rc1-jammy
+  - 7.0.3-jammy
+  - 7.0.2-jammy
+  - 7.0.1-rc0-jammy
+  - 7.0.1-jammy
+  - 7.0.0-rc8-jammy
+  - 7.0.0-rc7-jammy
+  - 7.0.0-rc6-jammy
+  - 7.0.0-rc5-jammy
+  - 7.0.0-rc4-jammy
+  - 7.0.0-rc3-jammy
+  - 7.0.0-rc2-jammy
+  - 7.0.0-rc10-jammy
+  - 7.0.0-jammy
+  - 7.0-rc-jammy
+  - 7.0-jammy
+7:
+  - 7-jammy
+6.0:
+  - 6.0.9-rc1-jammy
+  - 6.0.9-rc0-jammy
+  - 6.0.9-jammy
+  - 6.0.8-rc0-jammy
+  - 6.0.8-jammy
+  - 6.0.7-rc0-jammy
+  - 6.0.7-jammy
+  - 6.0.6-jammy
+  - 6.0.5-jammy
+  - 6.0.4-jammy
+  - 6.0.14-jammy
+  - 6.0.13-rc0-jammy
+  - 6.0.13-jammy
+  - 6.0.12-rc1-jammy
+  - 6.0.12-jammy
+  - 6.0.11-jammy
+  - 6.0.10-rc0-jammy
+  - 6.0.10-jammy
+  - 6.0-rc-jammy
+  - 6.0-jammy
+6:
+  - 6-jammy
+others:
+  - jammy
 ```
 
 ## Programmatic Usage

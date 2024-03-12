@@ -13,12 +13,10 @@ from rich.syntax import Syntax
 from ruamel.yaml import YAML
 
 from tomodo import TOMODO_VERSION
-from tomodo.cli import provision
+from tomodo.cli import provision, tags
 from tomodo.common.cleaner import Cleaner
-from tomodo.common.config import ProvisionerConfig
 from tomodo.common.errors import DeploymentNotFound, TomodoError
 from tomodo.common.models import Deployment
-from tomodo.common.provisioner import Provisioner
 from tomodo.common.reader import Reader, list_deployments_in_markdown_table
 from tomodo.common.starter import Starter
 from tomodo.common.util import AnonymizingFilter, check_docker
@@ -69,6 +67,8 @@ def version():
 
 
 cli.add_typer(provision.cli, name="provision")
+cli.add_typer(tags.cli, name="tags")
+
 
 @cli.command(
     help="Describe running deployments",
