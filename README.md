@@ -227,63 +227,52 @@ tomodo remove --auto-approve
 Use the `tags list` command to list the available image tags on Docker Hub.
 
 ```shell
-tomodo tags list --must-include jammy --must-exclude windows
+tomodo tags list --version 7
 ```
 
 Sample output:
 
-```yaml
-7.0:
-  - 7.0.7-rc2-jammy
-  - 7.0.7-rc0-jammy
-  - 7.0.6-jammy
-  - 7.0.5-rc0-jammy
-  - 7.0.5-jammy
-  - 7.0.4-rc0-jammy
-  - 7.0.4-jammy
-  - 7.0.3-rc1-jammy
-  - 7.0.3-jammy
-  - 7.0.2-jammy
-  - 7.0.1-rc0-jammy
-  - 7.0.1-jammy
-  - 7.0.0-rc8-jammy
-  - 7.0.0-rc7-jammy
-  - 7.0.0-rc6-jammy
-  - 7.0.0-rc5-jammy
-  - 7.0.0-rc4-jammy
-  - 7.0.0-rc3-jammy
-  - 7.0.0-rc2-jammy
-  - 7.0.0-rc10-jammy
-  - 7.0.0-jammy
-  - 7.0-rc-jammy
-  - 7.0-jammy
-7:
-  - 7-jammy
-6.0:
-  - 6.0.9-rc1-jammy
-  - 6.0.9-rc0-jammy
-  - 6.0.9-jammy
-  - 6.0.8-rc0-jammy
-  - 6.0.8-jammy
-  - 6.0.7-rc0-jammy
-  - 6.0.7-jammy
-  - 6.0.6-jammy
-  - 6.0.5-jammy
-  - 6.0.4-jammy
-  - 6.0.14-jammy
-  - 6.0.13-rc0-jammy
-  - 6.0.13-jammy
-  - 6.0.12-rc1-jammy
-  - 6.0.12-jammy
-  - 6.0.11-jammy
-  - 6.0.10-rc0-jammy
-  - 6.0.10-jammy
-  - 6.0-rc-jammy
-  - 6.0-jammy
-6:
-  - 6-jammy
-others:
-  - jammy
+```
+7.0.6
+7.0.6-jammy
+7.0.6-nanoserver
+7.0.6-nanoserver-1809
+7.0.6-nanoserver-ltsc2022
+7.0.6-windowsservercore
+7.0.6-windowsservercore-1809
+7.0.6-windowsservercore-ltsc2022
+7.0.5
+7.0.5-jammy
+7.0.5-nanoserver
+7.0.5-nanoserver-1809
+7.0.5-nanoserver-ltsc2022
+7.0.5-windowsservercore
+7.0.5-windowsservercore-1809
+7.0.5-windowsservercore-ltsc2022
+7.0.4
+7.0.4-jammy
+7.0.4-nanoserver
+7.0.4-nanoserver-1809
+7.0.4-nanoserver-ltsc2022
+7.0.4-windowsservercore
+7.0.4-windowsservercore-1809
+7.0.4-windowsservercore-ltsc2022
+7.0.3
+7.0.3-jammy
+7.0.3-nanoserver
+7.0.3-nanoserver-1809
+7.0.3-nanoserver-ltsc2022
+7.0.3-windowsservercore
+7.0.3-windowsservercore-1809
+7.0.3-windowsservercore-ltsc2022
+7.0.2
+7.0.2-jammy
+7.0.2-nanoserver
+7.0.2-nanoserver-1809
+7.0.2-nanoserver-ltsc2022
+7.0.2-windowsservercore
+7.0.2-windowsservercore-1809
+7.0.2-windowsservercore-ltsc2022
 ```
 
 ## Programmatic Usage
