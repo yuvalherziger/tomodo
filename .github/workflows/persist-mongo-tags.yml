@@ -10,7 +10,7 @@ on:
       - main
 
 env:
-  MONGO_URI: { { secrets.MONGO_URI } }
+  MONGO_URI: ${{ secrets.MONGO_URI }}
 
 jobs:
   write-image-tags:
