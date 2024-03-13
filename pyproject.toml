@@ -1,11 +1,11 @@
 [tool.poetry]
 name = "tomodo"
 version = "1.0.2"
-description = "A CLI tool to control MongoDB deployments on Docker"
+description = "A CLI for managing MongoDB deployments on Docker"
 authors = ["MongoDB PS <yuvi.herziger@mongodb.com>"]
 readme = "README.md"
-homepage = "https://github.com/mongodb-ps/ce-tomodo-docker"
-repository = "https://github.com/mongodb-ps/ce-tomodo-docker"
+homepage = "https://github.com/yuviherziger/tomodo"
+repository = "https://github.com/yuviherziger/tomodo"
 packages = [{ include = "tomodo" }]
 license = "MIT"
 keywords = ["mongodb", "docker", "upgrade", "python", "cli"]
