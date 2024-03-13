@@ -25,3 +25,12 @@ class PortsTakenException(TomodoError):
 
 class InvalidShellException(TomodoError):
     pass
+
+
+class MongoDBImageNotFound(TomodoError):
+
+    def __init__(self, image: str = None):
+        self.image = image
+
+    def __str__(self) -> str:
+        return f"The image {self.image + ' ' if self.image else ''}could not be pulled."
