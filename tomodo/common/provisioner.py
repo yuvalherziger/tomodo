@@ -15,7 +15,8 @@ from rich.console import Console
 from rich.markdown import Markdown
 
 from tomodo.common.config import ProvisionerConfig
-from tomodo.common.errors import InvalidConfiguration, PortsTakenException, DeploymentNotFound, DeploymentNameCollision
+from tomodo.common.errors import InvalidConfiguration, PortsTakenException, DeploymentNotFound, DeploymentNameCollision, \
+    MongoDBImageNotFound
 from tomodo.common.models import Mongod, ReplicaSet, ShardedCluster, Mongos, Shard, ConfigServer, Deployment, \
     AtlasDeployment
 from tomodo.common.util import (
@@ -44,9 +45,12 @@ class Provisioner:
             logger.info("Image '%s' was found locally", image_name)
         except docker.errors.ImageNotFound:
             # If not found, pull the image
-            logger.info("Pulling image '%s' from registry", image_name)
-            self.docker_client.images.pull(image_name)
-            logger.info("Pulled image '%s' successfully", image_name)
+            try:
+                logger.info("Pulling image '%s' from registry", image_name)
+                self.docker_client.images.pull(image_name)
+                logger.info("Pulled image '%s' successfully", image_name)
+            except docker.errors.NotFound:
+                raise MongoDBImageNotFound(image=image_name)
         except Exception:
             raise
 
