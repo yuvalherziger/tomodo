@@ -24,6 +24,7 @@ pytest = "^7.4.0"
 pytest-cov = "^4.1.0"
 pytest-mock = "^3.11.1"
 pyinstaller = "^6.3.0"
+pymongo = "^4.6.2"
 
 [build-system]
 requires = ["poetry-core>=1.5.1"]
@@ -35,3 +36,4 @@ build-amd64 = "scripts.packager:install_amd64"
 build-arm64 = "scripts.packager:install_arm64"
 ci-unit-tests = "scripts.test_runner:ci"
 local-unit-tests = "scripts.test_runner:local"
+load-tags = "tomodo.common.tag_manager:load_tags"

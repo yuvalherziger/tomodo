@@ -1,0 +1,39 @@
+name: Write Image Tags
+
+on:
+  release:
+    types: [ created ]
+  schedule:
+    - cron: "0 0 * * *"
+  push:
+    branches:
+      - main
+
+env:
+  MONGO_URI: { { secrets.MONGO_URI } }
+
+jobs:
+  write-image-tags:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+
+      - name: Set up Poetry
+        uses: abatilo/actions-poetry@v2.3.0
+        with:
+          poetry-version: 1.5.1
+
+      - name: Install dependencies
+        run: poetry install
+
+      - name: Load tags
+        run: poetry run load-tags

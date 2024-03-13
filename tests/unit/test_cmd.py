@@ -461,77 +461,36 @@ class TestCmd:
 
     @staticmethod
     @pytest.mark.parametrize(
-        "must_include, must_exclude, group, api_err",
+        "version, api_err",
         [
-            (None, None, True, False),
-            (None, None, False, False),
-            (None, None, False, True),
+            (None, False),
+            ("7.0", False),
+            (None, True),
         ]
     )
     @patch("tomodo.common.tag_manager.requests")
-    def test_list_tags(requests_patch: MagicMock, must_include: str, must_exclude: str, group: bool, api_err: bool):
+    def test_list_tags(requests_patch: MagicMock, version: str, api_err: bool):
         page_one_response = Response()
-
-        page_one_body = {
-            "next": True,
-            "results": [{
-                "name": "5.0"
-            }, {
-                "name": "5.0.1"
-            }, {
-                "name": "5.0.2"
-            }, {
-                "name": "6.0"
-            }, {
-                "name": "6"
-            }, {
-                "name": "6.0.1"
-            }, {
-                "name": "6.0.2"
-            }, {
-                "name": "6.0.3"
-            }, {
-                "name": "7-jammy"
-            }, {
-                "name": "7.0"
-            }, {
-                "name": "7.0.9"
-            }, {
-                "name": "latest"
-            }, {
-                "name": "jammy"
-            }, ]
-        }
+        page_one_size = 40
+        page_two_size = 20
+        page_one_body = [{"tag": f"7.0.{page_one_size - i + 1}"} for i in range(page_one_size + 2)]
         page_one_response._content = json.dumps(page_one_body).encode('utf-8')
         page_two_response = Response()
 
-        page_two_body = {
-            "next": None,
-            "results": [{
-                "name": "4.4"
-            }, {
-                "name": "4"
-            }, {
-                "name": "4.0"
-            }]
-        }
-        page_two_response._content = json.dumps(page_two_body).encode('utf-8')
+        page_two_body = [{"tag": "7.0.0"}]
+        page_two_body.extend([{"tag": f"6.0.{page_two_size - i + 1}"} for i in range(page_two_size + 2)])
+        page_two_response._content = json.dumps(page_two_body).encode("utf-8")
         page_one_response.status_code = 200
         if not api_err:
             page_two_response.status_code = 200
             requests_patch.get.side_effect = [page_one_response, page_two_response]
         else:
             page_two_response.status_code = 429
-            requests_patch.get.side_effect = [page_one_response, page_two_response]
+            requests_patch.get.side_effect = [page_one_response]
         args = []
-        if must_include:
-            args.extend(["--must-include", must_include])
-        if must_exclude:
-            args.extend(["--must-exclude", must_exclude])
-        if group:
-            args.extend(["--group"])
-        else:
-            args.extend(["--no-group"])
-        result = CliRunner().invoke(tags_cli, args)
 
+        if version:
+            args.extend(["--version", version])
+
+        result = CliRunner().invoke(tags_cli, args, input="y\n")
         assert result.exit_code == (0 if not api_err else 1)
