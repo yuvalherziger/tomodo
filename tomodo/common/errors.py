@@ -34,3 +34,12 @@ class MongoDBImageNotFound(TomodoError):
 
     def __str__(self) -> str:
         return f"The image {self.image + ' ' if self.image else ''}could not be pulled."
+
+
+class OperationNotSupportForDeploymentType(TomodoError):
+
+    def __init__(self, deployment_type: str):
+        self.deployment_type = deployment_type
+
+    def __str__(self) -> str:
+        return f"The deployment type {self.deployment_type} isn't supported by this operation."
