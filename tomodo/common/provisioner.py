@@ -15,6 +15,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 
 from tomodo.common.config import ProvisionerConfig
+from tomodo.common.data_migrator import DataMigrator
 from tomodo.common.errors import InvalidConfiguration, PortsTakenException, DeploymentNotFound, DeploymentNameCollision, \
     MongoDBImageNotFound
 from tomodo.common.models import Mongod, ReplicaSet, ShardedCluster, Mongos, Shard, ConfigServer, Deployment, \
@@ -54,14 +55,17 @@ class Provisioner:
         except Exception:
             raise
 
-    def provision(self, deployment_getter: callable) -> Union[Mongod, ReplicaSet, ShardedCluster, AtlasDeployment]:
+    def provision(self, deployment_getter: callable, copy_from: str = None) -> Union[
+        Mongod, ReplicaSet, ShardedCluster, AtlasDeployment]:
         if sum([self.config.standalone, self.config.replica_set, self.config.sharded, self.config.atlas]) != 1:
             logger.error("Exactly one of the following has to be specified: standalone, replica-set, sharded, or atlas")
             raise InvalidConfiguration
         if self.config.standalone and self.config.arbiter:
             logger.error("Arbiter nodes are supported only in replica sets and sharded clusters")
             raise InvalidConfiguration
-
+        migrator = DataMigrator()
+        if copy_from:
+            migrator.validate_snapshot_source(source_deployment_name=copy_from)
         try:
             _ = deployment_getter(self.config.name)
             raise DeploymentNameCollision(f"The deployment {self.config.name} already exists")
@@ -85,6 +89,8 @@ class Provisioner:
             deployment: ShardedCluster = self.provision_sharded_cluster()
         elif self.config.atlas:
             deployment: AtlasDeployment = self.provision_atlas_deployment()
+        if copy_from:
+            migrator.restore_from_snapshot(source_deployment_name=copy_from, target_deployment_name=deployment.name)
         self.print_deployment_summary(deployment=deployment)
         self.print_connection_details(deployment=deployment)
         return deployment

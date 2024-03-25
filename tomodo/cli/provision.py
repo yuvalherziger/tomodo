@@ -31,6 +31,13 @@ def _name() -> str:
     )
 
 
+def _copy_from() -> str:
+    return typer.Option(
+        default=None,
+        help="The name of a deployment to copy data from"
+    )
+
+
 def _port() -> int:
     return typer.Option(
         default=27017,
@@ -62,10 +69,10 @@ def _image_tag() -> str:
     )
 
 
-def _provision(config: ProvisionerConfig) -> None:
+def _provision(config: ProvisionerConfig, copy_from: str = None) -> None:
     provisioner = Provisioner(config=config)
     try:
-        provisioner.provision(deployment_getter=Reader().get_deployment_by_name)
+        provisioner.provision(deployment_getter=Reader().get_deployment_by_name, copy_from=copy_from)
     except TomodoError as e:
         logger.error(str(e))
         exit(1)
@@ -102,7 +109,8 @@ def standalone(
         image_repo: str = _image_repo(),
         image_tag: str = _image_tag(),
         port: int = _port(),
-        network_name: str = _network_name()
+        network_name: str = _network_name(),
+        copy_from: str = _copy_from()
 
 ):
     check_docker()
@@ -112,7 +120,7 @@ def standalone(
         auth_roles=auth_roles.split(" "), image_repo=image_repo, image_tag=image_tag,
         network_name=network_name
     )
-    _provision(config=config)
+    _provision(config=config, copy_from=copy_from)
 
 
 @cli.command(
@@ -155,7 +163,8 @@ def replica_set(
         ),
         image_repo: str = _image_repo(),
         image_tag: str = _image_tag(),
-        network_name: str = _network_name()
+        network_name: str = _network_name(),
+        copy_from: str = _copy_from()
 ):
     check_docker()
     config = ProvisionerConfig(
@@ -165,7 +174,7 @@ def replica_set(
         auth_roles=auth_roles.split(" "), image_repo=image_repo, image_tag=image_tag,
         network_name=network_name
     )
-    _provision(config=config)
+    _provision(config=config, copy_from=copy_from)
 
 
 @cli.command(
@@ -221,7 +230,8 @@ def sharded(
         ),
         image_repo: str = _image_repo(),
         image_tag: str = _image_tag(),
-        network_name: str = _network_name()
+        network_name: str = _network_name(),
+        copy_from: str = _copy_from()
 ):
     check_docker()
     config = ProvisionerConfig(
@@ -232,7 +242,7 @@ def sharded(
         auth_roles=auth_roles.split(" "), image_repo=image_repo, image_tag=image_tag,
         network_name=network_name
     )
-    _provision(config=config)
+    _provision(config=config, copy_from=copy_from)
 
 
 @cli.command(
@@ -261,7 +271,8 @@ def atlas(
             default="main",
             help="The MongoDB Atlas image tag (NOTE: you probably don't want to change it)"
         ),
-        network_name: str = _network_name()
+        network_name: str = _network_name(),
+        copy_from: str = _copy_from()
 ):
     check_docker()
     config = ProvisionerConfig(
@@ -270,4 +281,4 @@ def atlas(
         image_repo=image_repo, image_tag=image_tag,
         network_name=network_name, atlas_version=str(version.value)
     )
-    _provision(config=config)
+    _provision(config=config, copy_from=copy_from)

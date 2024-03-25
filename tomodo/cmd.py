@@ -15,6 +15,7 @@ from ruamel.yaml import YAML
 from tomodo import TOMODO_VERSION
 from tomodo.cli import provision, tags
 from tomodo.common.cleaner import Cleaner
+from tomodo.common.data_migrator import DataMigrator
 from tomodo.common.errors import DeploymentNotFound, TomodoError
 from tomodo.common.models import Deployment
 from tomodo.common.reader import Reader, list_deployments_in_markdown_table
@@ -303,6 +304,28 @@ def list_(
         exit(1)
     except Exception as e:
         logger.exception("Could not list your deployments - an error has occurred")
+        exit(1)
+
+
+@cli.command(
+    help="Dump a deployment",
+    no_args_is_help=False,
+    name="dump")
+def dump(
+        name: str = typer.Option(
+            help="The name of the deployment to create a dump of."
+        )
+):
+    check_docker()
+    reader = Reader()
+    migrator = DataMigrator(reader=reader)
+    try:
+        migrator.create_instance_snapshot(deployment_name=name)
+    except TomodoError as e:
+        logger.error(str(e))
+        exit(1)
+    except Exception as e:
+        logger.exception("Could not dump your deployment - an error has occurred")
         exit(1)
 
 
