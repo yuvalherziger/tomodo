@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "tomodo"
-version = "1.0.3"
+version = "1.0.4"
 description = "A CLI for managing MongoDB deployments on Docker"
 authors = ["MongoDB PS <yuvi.herziger@mongodb.com>"]
 readme = "README.md"
@@ -17,14 +17,13 @@ typer = { extras = ["all"], version = "^0.9.0" }
 ruamel-yaml = "^0.17.32"
 unique-names-generator = "^1.0.2"
 requests = "^2.31.0"
-
+pymongo = "^4.6.2"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.0"
 pytest-cov = "^4.1.0"
 pytest-mock = "^3.11.1"
 pyinstaller = "^6.3.0"
-pymongo = "^4.6.2"
 
 [build-system]
 requires = ["poetry-core>=1.5.1"]
