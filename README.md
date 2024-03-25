@@ -15,8 +15,7 @@
 
 -------
 
-Use it to create and manage Docker-based MongoDB community deployments - standalone instances, replica sets,
-and sharded clusters.
+Use it to create and manage Docker-based MongoDB community deployments - standalone instances, replica sets, sharded clusters, and local Atlas deployments.
 
 * [Installation](#installation)
     + [Install with Homebrew](#install-with-homebrew)
