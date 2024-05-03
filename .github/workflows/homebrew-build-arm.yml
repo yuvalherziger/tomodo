@@ -4,7 +4,7 @@ on:
     types: [ created ]
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: [ macos-latest, x64 ]
     environment: release
     permissions:
       id-token: write
@@ -34,14 +34,12 @@ jobs:
 
       - name: Build package
         run: |
-          poetry run build-amd64
-          # poetry run build-arm64
+          poetry run build-arm64
 
       - name: Create Custom Tarball
         run: |
           VERSION=${{ github.ref_name }}
-          tar -czvf ./tomodo-amd64-$VERSION.tar.gz -C dist-amd64/tomodo .
-          # tar -czvf ./tomodo-arm64-$VERSION.tar.gz -C dist-arm64/tomodo .
+          tar -czvf ./tomodo-arm64-$VERSION.tar.gz -C dist-arm64/tomodo .
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v2
@@ -49,14 +47,14 @@ jobs:
           name: release-tarball
           path: ./*.tar.gz
 
-      - name: Upload AMD64 Release Asset
+      - name: Upload ARM64 Release Asset
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.TAP_PAT }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./tomodo-amd64-${{ github.ref_name }}.tar.gz
-          asset_name: tomodo-amd64-${{ github.ref_name }}.tar.gz
+          asset_path: ./tomodo-arm64-${{ github.ref_name }}.tar.gz
+          asset_name: tomodo-arm64-${{ github.ref_name }}.tar.gz
           asset_content_type: application/gzip
 
 #      - name: Upload ARM64 Release Asset
