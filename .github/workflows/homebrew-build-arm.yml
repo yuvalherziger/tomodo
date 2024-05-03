@@ -4,7 +4,7 @@ on:
     types: [ created ]
 jobs:
   build:
-    runs-on: [ macos-latest, x64 ]
+    runs-on: macos-latest
     environment: release
     permissions:
       id-token: write
