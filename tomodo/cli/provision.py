@@ -31,6 +31,14 @@ def _name() -> str:
     )
 
 
+def _ephemeral() -> bool:
+    return typer.Option(
+        default=False,
+        help="Whether the deployment should be ephemeral and not persist data. All data is lost when the "
+             "deployment stops"
+    )
+
+
 def _port() -> int:
     return typer.Option(
         default=27017,
@@ -102,6 +110,7 @@ def standalone(
         image_repo: str = _image_repo(),
         image_tag: str = _image_tag(),
         port: int = _port(),
+        ephemeral: bool = _ephemeral(),
         network_name: str = _network_name()
 
 ):
@@ -110,7 +119,7 @@ def standalone(
         standalone=True, name=name, port=port,
         auth=auth, username=username, password=password, auth_db=auth_db,
         auth_roles=auth_roles.split(" "), image_repo=image_repo, image_tag=image_tag,
-        network_name=network_name
+        network_name=network_name, ephemeral=ephemeral
     )
     _provision(config=config)
 
@@ -155,6 +164,7 @@ def replica_set(
         ),
         image_repo: str = _image_repo(),
         image_tag: str = _image_tag(),
+        ephemeral: bool = _ephemeral(),
         network_name: str = _network_name()
 ):
     check_docker()
@@ -163,7 +173,7 @@ def replica_set(
         arbiter=arbiter, name=name, priority=priority, port=port,
         auth=auth, username=username, password=password, auth_db=auth_db,
         auth_roles=auth_roles.split(" "), image_repo=image_repo, image_tag=image_tag,
-        network_name=network_name
+        network_name=network_name, ephemeral=ephemeral
     )
     _provision(config=config)
 
@@ -221,6 +231,7 @@ def sharded(
         ),
         image_repo: str = _image_repo(),
         image_tag: str = _image_tag(),
+        ephemeral: bool = _ephemeral(),
         network_name: str = _network_name()
 ):
     check_docker()
@@ -230,7 +241,7 @@ def sharded(
         sharded=True, port=port, config_servers=config_servers, mongos=mongos,
         auth=auth, username=username, password=password, auth_db=auth_db,
         auth_roles=auth_roles.split(" "), image_repo=image_repo, image_tag=image_tag,
-        network_name=network_name
+        network_name=network_name, ephemeral=ephemeral
     )
     _provision(config=config)
 

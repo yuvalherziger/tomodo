@@ -425,26 +425,29 @@ tomodo describe --name {self.config.name}
     def create_mongod_container(self, port: int, name: str, replset_name: str = None,
                                 config_svr: bool = False, sh_cluster: bool = False, shard_id: int = 0,
                                 arbiter: bool = False) -> Container:
-        data_dir_name = f"data/{name}-db"
-        data_dir_path = os.path.join(DATA_FOLDER, data_dir_name)
-        os.makedirs(data_dir_path, exist_ok=True)
-        host_path = os.path.abspath(data_dir_path)
-        container_path = f"/{data_dir_name}"
-        mounts = [Mount(
-            target=container_path, source=host_path, type="bind"
-        )]
-
         repo = self.config.image_repo
         tag = self.config.image_tag
         image = f"{repo}:{tag}"
         logger.info("Creating container from '%s'. Port %d will be exposed to your host", image, port)
+        host_path = ""
+        container_path = ""
+        mounts = []
         command = [
             "mongod",
             "--bind_ip_all",
             "--port", str(port),
-            "--dbpath", container_path,
-            "--logpath", f"{container_path}/mongod.log"
         ]
+        if not self.config.ephemeral:
+            data_dir_name = f"data/{name}-db"
+            data_dir_path = os.path.join(DATA_FOLDER, data_dir_name)
+            os.makedirs(data_dir_path, exist_ok=True)
+            host_path = os.path.abspath(data_dir_path)
+            container_path = f"/{data_dir_name}"
+            mounts = [Mount(
+                target=container_path, source=host_path, type="bind"
+            )]
+            command.extend(["--dbpath", container_path, "--logpath", f"{container_path}/mongod.log"])
+
         environment = []
         if self.config.username and self.config.password:
             keyfile_path = os.path.abspath(f"{DATA_FOLDER}/mongo_keyfile")
@@ -500,7 +503,8 @@ tomodo describe --name {self.config.name}
                 "tomodo-container-data-dir": container_path,
                 "tomodo-shard-id": str(shard_id),
                 "tomodo-shard-count": str(self.config.shards or 0),
-                "tomodo-arbiter": str(int(arbiter))
+                "tomodo-arbiter": str(int(arbiter)),
+                "tomodo-ephemeral": str(int(self.config.ephemeral))
             }
         ), host_path, container_path
 

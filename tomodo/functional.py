@@ -10,7 +10,8 @@ def provision_standalone_instance(name: str = None,
                                   auth_db: str = "admin",
                                   auth_roles: List[str] = None, image_repo: str = "mongo",
                                   image_tag: str = "latest",
-                                  network_name: str = "mongo_network") -> Mongod:
+                                  network_name: str = "mongo_network",
+                                  ephemeral: bool = False) -> Mongod:
     """
     Provisions and returns a standalone instance of MongoDB
 
@@ -25,6 +26,8 @@ def provision_standalone_instance(name: str = None,
     :param image_tag:       The MongoDB image tag, which determines the MongoDB version to install
     :param network_name:    The Docker network to provision the deployment in; will create a new one or use an existing
                             one with the same name if such network exists
+    :param ephemeral:       Whether the deployment should be ephemeral and not persist data. All data is lost when the
+                            deployment stops
     :return:                Mongod instance
     """
     config = ProvisionerConfig(
@@ -38,7 +41,8 @@ def provision_standalone_instance(name: str = None,
         auth_roles=auth_roles,
         image_repo=image_repo,
         image_tag=image_tag,
-        network_name=network_name
+        network_name=network_name,
+        ephemeral=ephemeral
     )
     provisioner = Provisioner(config=config)
     reader = Reader()
@@ -84,7 +88,8 @@ def provision_atlas_instance(name: str = None,
 def provision_replica_set(replicas: int = 3, arbiter: bool = False, name: str = None, priority: bool = False,
                           port: int = 27017, auth: bool = False, username: str = None, password: str = None,
                           auth_db: str = "admin", auth_roles: List[str] = None, image_repo: str = "mongo",
-                          image_tag: str = "latest", network_name: str = "mongo_network") -> ReplicaSet:
+                          image_tag: str = "latest", network_name: str = "mongo_network",
+                          ephemeral: bool = False) -> ReplicaSet:
     """
     Provisions and returns a replica set instance of MongoDB
 
@@ -102,6 +107,8 @@ def provision_replica_set(replicas: int = 3, arbiter: bool = False, name: str = 
     :param image_tag:       The MongoDB image tag, which determines the MongoDB version to install
     :param network_name:    The Docker network to provision the deployment in; will create a new one or use an existing
                             one with the same name if such network exists
+    :param ephemeral:       Whether the deployment should be ephemeral and not persist data. All data is lost when the
+                            deployment stops
     :return:                ReplicaSet instance
     """
     config = ProvisionerConfig(
@@ -118,7 +125,8 @@ def provision_replica_set(replicas: int = 3, arbiter: bool = False, name: str = 
         auth_roles=auth_roles,
         image_repo=image_repo,
         image_tag=image_tag,
-        network_name=network_name
+        network_name=network_name,
+        ephemeral=ephemeral
     )
     provisioner = Provisioner(config=config)
     reader = Reader()
@@ -130,7 +138,7 @@ def provision_sharded_cluster(replicas: int = 3, shards: int = 2,
                               port: int = 27017, config_servers: int = 1, mongos: int = 1,
                               auth: bool = False, username: str = None, password: str = None, auth_db: str = "admin",
                               auth_roles: List[str] = None, image_repo: str = "mongo", image_tag: str = "latest",
-                              network_name: str = "mongo_network") -> ShardedCluster:
+                              network_name: str = "mongo_network", ephemeral: bool = False) -> ShardedCluster:
     """
     Provisions and returns a sharded cluster instance of MongoDB
 
@@ -150,6 +158,8 @@ def provision_sharded_cluster(replicas: int = 3, shards: int = 2,
     :param image_repo:
     :param image_tag:
     :param network_name:
+    :param ephemeral:       Whether the deployment should be ephemeral and not persist data. All data is lost when the
+                            deployment stops
     :return:
     """
     config = ProvisionerConfig(
@@ -169,7 +179,8 @@ def provision_sharded_cluster(replicas: int = 3, shards: int = 2,
         auth_roles=auth_roles,
         image_repo=image_repo,
         image_tag=image_tag,
-        network_name=network_name
+        network_name=network_name,
+        ephemeral=ephemeral
     )
     provisioner = Provisioner(config=config)
     reader = Reader()
