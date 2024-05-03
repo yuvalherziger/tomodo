@@ -1,0 +1,60 @@
+name: Build and Update Homebrew Formula
+on:
+  release:
+    types: [ created ]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      id-token: write
+    strategy:
+      matrix:
+        python-version: [ 3.8 ]
+        poetry-version: [ 1.5.1 ]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up Git
+        run: |
+          git config --global user.name 'tomodo publisher'
+          git config --global user.email 'tomodo.publisher@gmail.com'
+
+      - name: Run image
+        uses: abatilo/actions-poetry@v2.3.0
+        with:
+          poetry-version: ${{ matrix.poetry-version }}
+
+      - name: Install dependencies
+        run: poetry install
+
+      - name: Build package
+        run: |
+          poetry run build-amd64
+          # poetry run build-arm64
+
+      - name: Create Custom Tarball
+        run: |
+          VERSION=${{ github.ref_name }}
+          tar -czvf ./tomodo-amd64-$VERSION.tar.gz -C dist-amd64/tomodo .
+          # tar -czvf ./tomodo-arm64-$VERSION.tar.gz -C dist-arm64/tomodo .
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: release-tarball
+          path: ./*.tar.gz
+
+      - name: Upload AMD64 Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.TAP_PAT }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./tomodo-amd64-${{ github.ref_name }}.tar.gz
+          asset_name: tomodo-amd64-${{ github.ref_name }}.tar.gz
+          asset_content_type: application/gzip
