@@ -4,8 +4,8 @@ version = "1.1.1"
 description = "A CLI for managing MongoDB deployments on Docker"
 authors = ["MongoDB PS <yuvi.herziger@mongodb.com>"]
 readme = "README.md"
-homepage = "https://github.com/yuviherziger/tomodo"
-repository = "https://github.com/yuviherziger/tomodo"
+homepage = "https://tomodo.dev"
+repository = "https://github.com/yuvalherziger/tomodo"
 packages = [{ include = "tomodo" }]
 license = "MIT"
 keywords = ["mongodb", "docker", "upgrade", "python", "cli"]

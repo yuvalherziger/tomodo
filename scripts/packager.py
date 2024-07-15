@@ -21,5 +21,7 @@ def install(platform: str):
         "--console",
         "--name", "tomodo",
         "--distpath", f"dist-{platform}",
-        "--target-architecture", platform if platform == "arm64" else "x86_64"
+        "--target-architecture", platform if platform == "arm64" else "x86_64",
+        "--hidden-import", "shellingham",
+        "--hidden-import", "shellingham.posix"
     ])

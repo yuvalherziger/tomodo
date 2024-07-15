@@ -1,11 +1,11 @@
 <div align="center">
-  <img height="250px" src="https://github.com/yuviherziger/tomodo/raw/main/tomodo-nopg.png" alt="tomodo logo"></img>
+  <img height="250px" src="https://github.com/yuvalherziger/tomodo/raw/main/tomodo-nopg.png" alt="tomodo logo"></img>
 
-![Latest Release](https://img.shields.io/github/v/release/yuviherziger/tomodo?display_name=release&style=flat&color=%2332c955)
-![Unit Tests](https://github.com/yuviherziger/tomodo/actions/workflows/unit-tests.yml/badge.svg)
-[![codecov](https://codecov.io/gh/yuviherziger/tomodo/graph/badge.svg?token=3CE8D8NAAY)](https://codecov.io/gh/yuviherziger/tomodo)
+![Latest Release](https://img.shields.io/github/v/release/yuvalherziger/tomodo?display_name=release&style=flat&color=%2332c955)
+![Unit Tests](https://github.com/yuvalherziger/tomodo/actions/workflows/unit-tests.yml/badge.svg)
+[![codecov](https://codecov.io/gh/yuvalherziger/tomodo/graph/badge.svg?token=3CE8D8NAAY)](https://codecov.io/gh/yuvalherziger/tomodo)
 ![Python Version](https://img.shields.io/pypi/pyversions/tomodo)
-![License](https://img.shields.io/github/license/yuviherziger/tomodo)
+![License](https://img.shields.io/github/license/yuvalherziger/tomodo)
 
 </div>
 
@@ -44,7 +44,7 @@ Use it to create and manage Docker-based MongoDB community deployments - standal
 running the following commands:
 
 ```shell
-brew tap yuviherziger/homebrew-tomodo
+brew tap yuvalherziger/homebrew-tomodo
 brew install tomodo
 ```
 
@@ -78,7 +78,7 @@ If you have the [Poetry](https://python-poetry.org/) Python package manager inst
 the CLI the following way:
 
 ```bash
-git clone https://github.com/yuviherziger/tomodo.git
+git clone https://github.com/yuvalherziger/tomodo.git
 cd tomodo
 poetry shell
 poetry install
@@ -95,7 +95,7 @@ tomodo --help
 You can install the dependencies with pip using the following command:
 
 ```bash
-git clone https://github.com/yuviherziger/tomodo.git
+git clone https://github.com/yuvalherziger/tomodo.git
 cd tomodo
 pip install .
 ```
@@ -324,5 +324,5 @@ for name in deployments.keys():
 ##  Disclaimer
 This software is not supported by MongoDB, Inc. under any of their commercial support subscriptions or otherwise.
 Any usage of tomodo is at your own risk. Bug reports, feature requests, and questions can be posted in the
-[Issues section](https://github.com/yuviherziger/tomodo/issues) of this repository.
+[Issues section](https://github.com/yuvalherziger/tomodo/issues) of this repository.
 
