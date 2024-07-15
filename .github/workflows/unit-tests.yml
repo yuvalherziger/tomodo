@@ -43,4 +43,4 @@ jobs:
           file: ./coverage.xml
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-          slug: yuviherziger/tomodo
+          slug: yuvalherziger/tomodo

@@ -265,7 +265,7 @@ def atlas(
             help="The MongoDB version to install"
         ),
         image_repo: str = typer.Option(
-            default="ghcr.io/yuviherziger/tomodo",
+            default="ghcr.io/yuvalherziger/tomodo",
             help="The MongoDB Atlas image name/repo (NOTE: you probably don't want to change it)"
         ),
         image_tag: str = typer.Option(
