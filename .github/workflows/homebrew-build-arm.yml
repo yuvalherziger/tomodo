@@ -68,12 +68,12 @@ jobs:
 #          asset_content_type: application/gzip
 #      - name: Update Homebrew formula
 #        env:
-#          TAP_REPO: yuviherziger/homebrew-tomodo
+#          TAP_REPO: yuvalherziger/homebrew-tomodo
 #          FORMULA_NAME: tomodo
 #          PAT: ${{ secrets.TAP_PAT }}
 #        run: |
 #          # Clone tap repository
-#          RELEASE_ARTIFACT_URL=https://github.com/yuviherziger/tomodo/releases/download/${{ github.ref_name }}/tomodo-${{ github.ref_name }}.tar.gz
+#          RELEASE_ARTIFACT_URL=https://github.com/yuvalherziger/tomodo/releases/download/${{ github.ref_name }}/tomodo-${{ github.ref_name }}.tar.gz
 #          git clone https://github.com/${TAP_REPO}.git
 #          cd homebrew-tomodo
 #
