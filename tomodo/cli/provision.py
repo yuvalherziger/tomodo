@@ -269,7 +269,7 @@ def atlas(
             help="The MongoDB Atlas image name/repo (NOTE: you probably don't want to change it)"
         ),
         image_tag: str = typer.Option(
-            default="main",
+            default="latest",
             help="The MongoDB Atlas image tag (NOTE: you probably don't want to change it)"
         ),
         network_name: str = _network_name()

@@ -30,7 +30,7 @@ jobs:
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ secrets.TAP_PAT }}
+          password: ${{ secrets.TAP_PAT }}  # GitHub requires the usage of classic PATs for image publishing
 
       - name: Extract metadata (tags, labels) for Docker
         id: meta
