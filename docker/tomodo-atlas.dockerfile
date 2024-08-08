@@ -6,6 +6,8 @@ ARG PORT=27017
 ARG NAME=local-deployment
 ENV MDBVERSION=7.0
 
+RUN yum -y install podman
+
 ENTRYPOINT atlas deployments setup ${NAME} --type local --bindIpAll --force \
     ${USERNAME:+--username $USERNAME} \
     ${PASSWORD:+--password $PASSWORD} \
