@@ -438,13 +438,14 @@ tomodo describe --name {self.config.name}
             "--port", str(port),
         ]
         if not self.config.ephemeral:
+            home_dir = os.path.expanduser("~")
             data_dir_name = f"data/{name}-db"
-            data_dir_path = os.path.join(DATA_FOLDER, data_dir_name)
+            data_dir_path = os.path.join(home_dir, data_dir_name)
             os.makedirs(data_dir_path, exist_ok=True)
             host_path = os.path.abspath(data_dir_path)
-            container_path = f"/{data_dir_name}"
+            container_path = "/data/db"
             mounts = [Mount(
-                target=container_path, source=host_path, type="bind"
+                target=container_path, source=host_path, type="bind", read_only=False
             )]
             command.extend(["--dbpath", container_path, "--logpath", f"{container_path}/mongod.log"])
 
@@ -486,6 +487,7 @@ tomodo describe --name {self.config.name}
             ports={f"{port}/tcp": port},
             platform=f"linux/{platform.machine()}",
             network=self.network.id,
+            privileged=True,
             hostname=name,
             name=name,
             command=command,
