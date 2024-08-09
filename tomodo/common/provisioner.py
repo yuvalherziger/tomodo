@@ -98,18 +98,20 @@ class Provisioner:
         auth = ""
         if self.config.is_auth_enabled:
             auth = f"{self.config.username}:********@"
-        hosts = ""
+        members: List[Mongod] = []
         localhost_conn_string: List[str] = [f"mongodb://{auth}localhost:{self.config.port}"]
         mapped_conn: List[str] = []
 
         if isinstance(deployment, Mongod):
             mapped_conn: List[str] = [f"mongodb://{auth}{self.config.name}-1:{self.config.port}"]
-            hosts = deployment.name
+            members = [deployment]
         elif isinstance(deployment, ReplicaSet):
+            rs_hosts = ",".join([f"{m.name}:{m.port}" for m in deployment.members])
+            members = deployment.members
             mapped_conn: List[str] = [
-                f"mongodb://{auth}{self.config.name}-1:{self.config.port}/?replicaSet={self.config.name}"]
-            hosts = ",".join([m.name for m in deployment.members])
+                f"mongodb://{auth}{rs_hosts}/?replicaSet={self.config.name}"]
         elif isinstance(deployment, ShardedCluster):
+            members = deployment.routers
             localhost_conn_string: List[str] = [
                 f"mongodb://{auth}localhost:{r.port}"
                 for r in deployment.routers
@@ -126,8 +128,9 @@ class Provisioner:
             for s in deployment.shards:
                 for m in s.members:
                     host_list.append(m.name)
-            hosts = ",".join(host_list)
-        command = f"echo '127.0.0.1 {hosts}' | sudo tee -a /etc/hosts"
+        command = ""
+        for m in members:
+            command += f"echo '127.0.0.1 {m.name}' | sudo tee -a /etc/hosts\n"
         localhost_conn_strings = "\n".join(f"mongosh '{s}'" for s in localhost_conn_string)
         mapped_conns = "\n".join(f"mongosh '{s}'" for s in mapped_conn)
         markdown = Markdown(f"""
@@ -487,7 +490,6 @@ tomodo describe --name {self.config.name}
             ports={f"{port}/tcp": port},
             platform=f"linux/{platform.machine()}",
             network=self.network.id,
-            privileged=True,
             hostname=name,
             name=name,
             command=command,
