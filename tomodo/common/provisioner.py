@@ -11,12 +11,18 @@ from docker.errors import APIError
 from docker.models.containers import Container
 from docker.models.networks import Network
 from docker.types import EndpointConfig, Mount, NetworkingConfig
+from pymongo import MongoClient
 from rich.console import Console
 from rich.markdown import Markdown
 
 from tomodo.common.config import ProvisionerConfig
-from tomodo.common.errors import InvalidConfiguration, PortsTakenException, DeploymentNotFound, DeploymentNameCollision, \
+from tomodo.common.errors import (
+    InvalidConfiguration,
+    PortsTakenException,
+    DeploymentNotFound,
+    DeploymentNameCollision,
     MongoDBImageNotFound
+)
 from tomodo.common.models import Mongod, ReplicaSet, ShardedCluster, Mongos, Shard, ConfigServer, Deployment, \
     AtlasDeployment
 from tomodo.common.util import (
@@ -24,7 +30,6 @@ from tomodo.common.util import (
 )
 
 DOCKER_ENDPOINT_CONFIG_VER = "1.43"
-DATA_FOLDER = "/var/tmp/tomodo"
 
 console = Console()
 logger = logging.getLogger("rich")
@@ -97,13 +102,17 @@ class Provisioner:
     def print_connection_details(self, deployment: Deployment = None):
         auth = ""
         if self.config.is_auth_enabled:
-            auth = f"{self.config.username}:********@"
+            auth = f"{self.config.username}:{self.config.password}@"
         members: List[Mongod] = []
         localhost_conn_string: List[str] = [f"mongodb://{auth}localhost:{self.config.port}"]
         mapped_conn: List[str] = []
 
-        if isinstance(deployment, Mongod):
-            mapped_conn: List[str] = [f"mongodb://{auth}{self.config.name}-1:{self.config.port}"]
+        if isinstance(deployment, AtlasDeployment):
+            mapped_conn: List[str] = [f"mongodb://{auth}{self.config.name}:{self.config.port}"]
+            members = [deployment]
+
+        elif isinstance(deployment, Mongod):
+            mapped_conn: List[str] = [f"mongodb://{auth}{self.config.name}-1:{self.config.port}/?directConnection=True"]
             members = [deployment]
         elif isinstance(deployment, ReplicaSet):
             rs_hosts = ",".join([f"{m.name}:{m.port}" for m in deployment.members])
@@ -237,11 +246,13 @@ tomodo describe --name {self.config.name}
                     "the MongoDB binaries are downloaded lazily in the container's runtime")
         if not is_port_range_available((atlas_depl.port,)):
             raise PortsTakenException
-        container = self.create_atlas_container(
+        container, host_path, container_path = self.create_atlas_container(
             port=atlas_depl.port,
             name=atlas_depl.name
         )
         atlas_depl.container = container
+        atlas_depl.host_data_dir = host_path
+        atlas_depl.container_data_dir = container_path
         atlas_depl.container_id = container.short_id
         logger.info("MongoDB container created [id: %s]", atlas_depl.container_id)
         logger.info("Checking the readiness of %s", atlas_depl.name)
@@ -329,14 +340,15 @@ tomodo describe --name {self.config.name}
     def wait_for_readiness(self, mongod: Mongod):
         logger.debug("Checking the readiness of %s", mongod.name)
         mongo_cmd = "db.runCommand({ping: 1}).ok"
-        exit_code, output, _ = run_mongo_shell_command(mongo_cmd=mongo_cmd, mongod=mongod)
 
         try:
+            exit_code, output, _ = run_mongo_shell_command(mongo_cmd=mongo_cmd, mongod=mongod, config=self.config)
             is_ready = int(output) == 1
-        except:
+        except Exception as e:
+            logger.debug(str(e))
             is_ready = False
         if not is_ready:
-            logger.debug("Server %s is not ready to accept connections", mongod.name)
+            logger.info("Server %s is not ready to accept connections", mongod.name)
             raise Exception("Server isn't ready")
         logger.info("Server %s is ready to accept connections", mongod.name)
 
@@ -346,31 +358,56 @@ tomodo describe --name {self.config.name}
 
     @with_retry(max_attempts=10, delay=10, retryable_exc=(APIError, Exception))
     def wait_for_atlas_deployment_readiness(self, depl: AtlasDeployment):
-        self.wait_for_readiness(depl)
+        logger.debug("Checking the readiness of %s", depl.name)
+        client_args = {"directConnection": True}
+        if self.config.is_auth_enabled:
+            client_args.update(username=self.config.username, password=self.config.password)
+        client = MongoClient(host="localhost", port=depl.port, **client_args)
+        res = client.admin.command("ping")
+        if not int(res["ok"]) == 1:
+            logger.debug("Server %s is not ready to accept connections", depl.name)
+            raise Exception("Server isn't ready")
+        logger.info("Server %s is ready to accept connections", depl.name)
 
     def create_atlas_container(self, port: int, name: str) -> Container:
+        # TODO: port
         repo = self.config.image_repo
         tag = self.config.image_tag
         image = f"{repo}:{tag}"
         environment = [
             f"PORT={port}",
             f"NAME={name}",
-            f"MDBVERSION={self.config.atlas_version}"
         ]
         if self.config.is_auth_enabled:
-            environment.extend([f"USERNAME={self.config.username}", f"PASSWORD={self.config.password}"])
+            environment.extend([f"MONGODB_INITDB_ROOT_USERNAME={self.config.username}",
+                                f"MONGODB_INITDB_ROOT_PASSWORD={self.config.password}"])
+        mounts = []
+        host_path = ""
+        container_path = ""
+        if not self.config.ephemeral:
+            home_dir = os.path.expanduser("~")
+            data_dir_name = f".tomodo/data/{name}-db"
+            data_dir_path = os.path.join(home_dir, data_dir_name)
+            os.makedirs(data_dir_path, exist_ok=True)
+            host_path = os.path.abspath(data_dir_path)
+            container_path = "/data/db"
+            mounts = [Mount(
+                target=container_path, source=host_path, type="bind", read_only=False
+            )]
+
         logger.info("Creating container from '%s'. Port %d will be exposed to your host", image, port)
         networking_config = NetworkingConfig(
             endpoints_config={
-                self.network.name: EndpointConfig(version="1.43", aliases=[name])
+                self.network.name: EndpointConfig(version=DOCKER_ENDPOINT_CONFIG_VER, aliases=[name])
             }
         )
         return self.docker_client.containers.run(
             f"{repo}:{tag}",
             detach=True,
             privileged=True,
-            ports={f"{port}/tcp": port},
+            ports={f"27017/tcp": port},
             platform=f"linux/{platform.machine()}",
+            mounts=mounts,
             network=self.network.id,
             hostname=name,
             name=name,
@@ -381,12 +418,13 @@ tomodo describe --name {self.config.name}
                 "tomodo-name": name,
                 "tomodo-group": name,
                 "tomodo-port": str(port),
+                "tomodo-data-dir": host_path,
+                "tomodo-container-data-dir": container_path,
                 "tomodo-role": "atlas",
                 "tomodo-type": "Atlas Deployment",
-                "tomodo-mongodb-version": str(self.config.atlas_version),
                 "tomodo-shard-count": str(self.config.shards or 0),
             }
-        )
+        ), host_path, container_path
 
     def create_mongos_container(self, port: int, name: str, config_svr_replicaset: ReplicaSet):
         repo = self.config.image_repo
@@ -401,7 +439,7 @@ tomodo describe --name {self.config.name}
         ]
         networking_config = NetworkingConfig(
             endpoints_config={
-                self.network.name: EndpointConfig(version="1.43", aliases=[name])
+                self.network.name: EndpointConfig(version=DOCKER_ENDPOINT_CONFIG_VER, aliases=[name])
             }
         )
         return self.docker_client.containers.run(
@@ -440,9 +478,9 @@ tomodo describe --name {self.config.name}
             "--bind_ip_all",
             "--port", str(port),
         ]
+        home_dir = os.path.expanduser("~")
         if not self.config.ephemeral:
-            home_dir = os.path.expanduser("~")
-            data_dir_name = f"data/{name}-db"
+            data_dir_name = f".tomodo/data/{name}-db"
             data_dir_path = os.path.join(home_dir, data_dir_name)
             os.makedirs(data_dir_path, exist_ok=True)
             host_path = os.path.abspath(data_dir_path)
@@ -454,7 +492,7 @@ tomodo describe --name {self.config.name}
 
         environment = []
         if self.config.username and self.config.password:
-            keyfile_path = os.path.abspath(f"{DATA_FOLDER}/mongo_keyfile")
+            keyfile_path = os.path.abspath(os.path.join(home_dir, ".tomodo/mongo_keyfile"))
             environment = [f"MONGO_INITDB_ROOT_USERNAME={self.config.username}",
                            f"MONGO_INITDB_ROOT_PASSWORD={self.config.password}"]
 

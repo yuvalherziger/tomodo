@@ -446,7 +446,7 @@ class TestCmd:
             else:
                 mock_reader_instance.get_all_deployments.side_effect = exc
 
-        result = CliRunner().invoke(cli, args)
+        result = CliRunner(mix_stderr=False).invoke(cli, args)
         assert result.exit_code == (1 if exc else 0)
         if by_name:
             if fmt == "table":

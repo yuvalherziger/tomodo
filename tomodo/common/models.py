@@ -120,6 +120,11 @@ class Mongod(Deployment):
     def as_dict(self, detailed: bool = False) -> Dict:
         if not detailed:
             return super().as_dict(detailed=False)
+        tags: List[str] = []
+        try:
+            tags = self.container.image.tags
+        except:
+            pass
         return {
             "name": self.name,
             "deployment_type": self.deployment_type,
@@ -132,7 +137,7 @@ class Mongod(Deployment):
             "is_arbiter": self.is_arbiter,
             "container": {
                 "id": self.container.short_id,
-                "image": str(self.container.image),
+                "image": tags,
                 "ports": self.container.ports,
             }
         }
@@ -290,6 +295,8 @@ class AtlasDeployment(Mongod):
             name=mongod.name,
             container_id=mongod.container_id,
             container=mongod.container,
+            host_data_dir=mongod.host_data_dir,
+            container_data_dir=mongod.container_data_dir,
             deployment_type="Atlas Deployment"
         )
         atlas_depl.mongo_version = details.get("tomodo-mongo-version")

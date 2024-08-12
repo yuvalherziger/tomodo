@@ -253,19 +253,15 @@ def atlas(
         name: str = _name(),
         port: int = _port(),
         username: str = typer.Option(
-            help="Authentication username",
-            default="admin"
+            default=None,
+            help="Optional authentication username"
         ),
         password: str = typer.Option(
-            help="Authentication password",
-            default="admin"
-        ),
-        version: AtlasVersion = typer.Option(
-            default=AtlasVersion.SEVEN_OH.value,
-            help="The MongoDB version to install"
+            default=None,
+            help="Optional authentication password"
         ),
         image_repo: str = typer.Option(
-            default="ghcr.io/yuvalherziger/tomodo",
+            default="mongodb/mongodb-atlas-local",
             help="The MongoDB Atlas image name/repo (NOTE: you probably don't want to change it)"
         ),
         image_tag: str = typer.Option(
@@ -279,6 +275,6 @@ def atlas(
         name=name, atlas=True, port=port,
         username=username, password=password,
         image_repo=image_repo, image_tag=image_tag,
-        network_name=network_name, atlas_version=str(version.value)
+        network_name=network_name
     )
     _provision(config=config)
