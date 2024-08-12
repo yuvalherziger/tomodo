@@ -185,7 +185,7 @@ class TestProvisioner:
             expected_kwargs=dict(
                 detach=True,
                 ports={"27017/tcp": 27017},
-                platform="linux/arm64",
+                platform=f"linux/{platform.machine()}",
                 network="0123456789abcdef",
                 hostname="unit-test-sa",
                 name="unit-test-sa",
@@ -250,7 +250,7 @@ class TestProvisioner:
             expected_kwargs=dict(
                 detach=True,
                 ports={"27017/tcp": 27017},
-                platform="linux/arm64",
+                platform=f"linux/{platform.machine()}",
                 network="0123456789abcdef",
                 hostname=name,
                 name=name,
@@ -317,7 +317,7 @@ class TestProvisioner:
             expected_kwargs=dict(
                 detach=True,
                 ports={"27017/tcp": 27017},
-                platform="linux/arm64",
+                platform=f"linux/{platform.machine()}",
                 network="0123456789abcdef",
                 hostname=name,
                 name=name,
@@ -405,7 +405,7 @@ class TestProvisioner:
             expected_kwargs=dict(
                 detach=True,
                 ports={"27017/tcp": 27017},
-                platform="linux/arm64",
+                platform=f"linux/{platform.machine()}",
                 network="0123456789abcdef",
                 hostname=name,
                 name=name,
