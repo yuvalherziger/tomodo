@@ -78,7 +78,7 @@ def extract_details_from_containers(containers) -> List[Dict]:
     container_details = []
     for container in containers:
         if container.labels.get("tomodo-type") == ATLAS_DEPLOYMENT:
-            mongo_version = container.labels.get("tomodo-mongodb-version")
+            mongo_version = container.labels.get("version")
         else:
             mongo_version = _read_mongo_version_from_container(container)
         container_details.append({

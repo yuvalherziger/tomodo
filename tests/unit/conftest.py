@@ -4,6 +4,7 @@ from unittest.mock import Mock, MagicMock
 
 import pytest
 from docker.models.containers import Container
+from docker.models.images import Image
 from docker.models.networks import Network
 
 from tomodo import models
@@ -75,7 +76,7 @@ def standalone_container() -> Container:
             "Config": {
                 "Labels": {
                     "source": "tomodo", "tomodo-arbiter": "0",
-                    "tomodo-container-data-dir": f"/data/{depl_name}-db",
+                    "tomodo-container-data-dir": "/data/db",
                     "tomodo-data-dir": f"/var/tmp/tomodo/data/{depl_name}-db", "tomodo-group": depl_name,
                     "tomodo-name": depl_name, "tomodo-port": "27017", "tomodo-role": "standalone",
                     "tomodo-shard-count": "2", "tomodo-shard-id": "0", "tomodo-type": "Standalone"
@@ -184,11 +185,13 @@ def replica_set_containers() -> List[Container]:
                 "Name": "mongos_name",
                 "Id": secrets.token_hex(32),
                 "State": "running",
-                "Image": None,
+                "Image": Image(attrs={
+                    "RepoTags": ["mongo:latest"]
+                }),
                 "Config": {
                     "Labels": {
                         "source": "tomodo", "tomodo-arbiter": "0",
-                        "tomodo-container-data-dir": f"/data/{depl_name}-db-{i}",
+                        "tomodo-container-data-dir": "/data/db",
                         "tomodo-data-dir": f"/var/tmp/tomodo/data/{depl_name}-db-{i}", "tomodo-group": depl_name,
                         "tomodo-name": f"{depl_name}-{i}", "tomodo-port": 27016 + i, "tomodo-role": "rs-member",
                         "tomodo-shard-count": "2", "tomodo-shard-id": "0", "tomodo-type": "Replica Set"
@@ -219,11 +222,13 @@ def sharded_cluster_containers() -> List[Container]:
                 "Name": f"{depl_name}-cfg-svr-{i}",
                 "Id": secrets.token_hex(32),
                 "State": "running",
-                "Image": None,
+                "Image": Image(attrs={
+                    "RepoTags": ["mongo:latest"]
+                }),
                 "Config": {
                     "Labels": {
                         "source": "tomodo", "tomodo-arbiter": "0",
-                        "tomodo-container-data-dir": f"/data/{depl_name}-cfg-svr-{i}",
+                        "tomodo-container-data-dir": "/data/db",
                         "tomodo-data-dir": f"/var/tmp/tomodo/data/{depl_name}-cfg-svr-{i}",
                         "tomodo-group": depl_name,
                         "tomodo-name": f"{depl_name}-cfg-svr-{i}", "tomodo-port": cfg_start_port + i - 1,
@@ -243,7 +248,9 @@ def sharded_cluster_containers() -> List[Container]:
                 "Name": f"{depl_name}-mongos-{i}",
                 "Id": secrets.token_hex(32),
                 "State": "running",
-                "Image": None,
+                "Image": Image(attrs={
+                    "RepoTags": ["mongo:latest"]
+                }),
                 "Config": {
                     "Labels": {
                         "source": "tomodo",
@@ -266,11 +273,13 @@ def sharded_cluster_containers() -> List[Container]:
                     "Name": f"{depl_name}-sh-{sh}-{i}",
                     "Id": secrets.token_hex(32),
                     "State": "running",
-                    "Image": None,
+                    "Image": Image(attrs={
+                        "RepoTags": ["mongo:latest"]
+                    }),
                     "Config": {
                         "Labels": {
                             "source": "tomodo", "tomodo-arbiter": "0",
-                            "tomodo-container-data-dir": f"/data/{depl_name}-sh-{sh}-{i}",
+                            "tomodo-container-data-dir": "/data/db",
                             "tomodo-data-dir": f"/var/tmp/tomodo/data/{depl_name}-sh-{sh}-{i}",
                             "tomodo-group": depl_name,
                             "tomodo-name": f"{depl_name}-sh-{sh}-{i}",

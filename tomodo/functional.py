@@ -52,7 +52,7 @@ def provision_standalone_instance(name: str = None,
 def provision_atlas_instance(name: str = None,
                              port: int = 27017, version: str = "7.0",
                              username: str = None, password: str = None,
-                             image_repo: str = "ghcr.io/yuvalherziger/tomodo",
+                             image_repo: str = "mongodb/mongodb-atlas-local",
                              image_tag: str = "latest",
                              network_name: str = "mongo_network") -> AtlasDeployment:
     """
@@ -77,8 +77,7 @@ def provision_atlas_instance(name: str = None,
         password=password,
         image_repo=image_repo,
         image_tag=image_tag,
-        network_name=network_name,
-        atlas_version=version
+        network_name=network_name
     )
     provisioner = Provisioner(config=config)
     reader = Reader()

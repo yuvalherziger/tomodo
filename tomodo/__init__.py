@@ -5,5 +5,5 @@ from tomodo.common.config import ProvisionerConfig
 from tomodo.common.provisioner import Provisioner
 from tomodo.common.reader import Reader
 
-TOMODO_VERSION = "1.1.5"
+TOMODO_VERSION = "1.2.0"
 __all__ = ["Cleaner", "ProvisionerConfig", "errors", "models", "Provisioner", "Reader", "TOMODO_VERSION"]

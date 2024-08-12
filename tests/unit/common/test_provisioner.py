@@ -195,9 +195,9 @@ class TestProvisioner:
                     "--port",
                     "27017",
                     "--dbpath",
-                    "/data/unit-test-sa-db",
+                    "/data/db",
                     "--logpath",
-                    "/data/unit-test-sa-db/mongod.log"
+                    "/data/db/mongod.log"
                 ],
                 environment=[],
                 labels={
@@ -208,10 +208,11 @@ class TestProvisioner:
                     "tomodo-role": "standalone",
                     "tomodo-type": "Standalone",
                     "tomodo-data-dir": host_data_path,
-                    "tomodo-container-data-dir": "/data/unit-test-sa-db",
+                    "tomodo-container-data-dir": "/data/db",
                     "tomodo-shard-id": "0",
                     "tomodo-shard-count": "2",
-                    "tomodo-arbiter": "0"
+                    "tomodo-arbiter": "0",
+                    "tomodo-ephemeral": "0"
                 }
             )
         )
@@ -259,9 +260,9 @@ class TestProvisioner:
                     "--port",
                     "27017",
                     "--dbpath",
-                    f"/data/{name}-db",
+                    "/data/db",
                     "--logpath",
-                    f"/data/{name}-db/mongod.log",
+                    "/data/db/mongod.log",
                     "--configsvr",
                     "--replSet",
                     f"{name}-cfg-svr"
@@ -275,10 +276,11 @@ class TestProvisioner:
                     "tomodo-role": "cfg-svr",
                     "tomodo-type": "Sharded Cluster",
                     "tomodo-data-dir": host_data_path,
-                    "tomodo-container-data-dir": f"/data/{name}-db",
+                    "tomodo-container-data-dir": f"/data/db",
                     "tomodo-shard-id": "0",
                     "tomodo-shard-count": "2",
-                    "tomodo-arbiter": "0"
+                    "tomodo-arbiter": "0",
+                    "tomodo-ephemeral": "0"
                 }
             )
         )
@@ -325,9 +327,9 @@ class TestProvisioner:
                     "--port",
                     "27017",
                     "--dbpath",
-                    f"/data/{name}-db",
+                    "/data/db",
                     "--logpath",
-                    f"/data/{name}-db/mongod.log",
+                    "/data/db/mongod.log",
                     "--replSet",
                     name
                 ],
@@ -340,10 +342,11 @@ class TestProvisioner:
                     "tomodo-role": "rs-member",
                     "tomodo-type": "Replica Set",
                     "tomodo-data-dir": host_data_path,
-                    "tomodo-container-data-dir": f"/data/{name}-db",
+                    "tomodo-container-data-dir": "/data/db",
                     "tomodo-shard-id": "0",
                     "tomodo-shard-count": "2",
-                    "tomodo-arbiter": "0"
+                    "tomodo-arbiter": "0",
+                    "tomodo-ephemeral": "0"
                 }
             )
         )
@@ -412,9 +415,9 @@ class TestProvisioner:
                     "--port",
                     "27017",
                     "--dbpath",
-                    f"/data/{name}-db",
+                    "/data/db",
                     "--logpath",
-                    f"/data/{name}-db/mongod.log",
+                    "/data/db/mongod.log",
                     *cmd_extra,
                     "--shardsvr",
                     "--replSet",
@@ -429,10 +432,11 @@ class TestProvisioner:
                     "tomodo-role": "rs-member",
                     "tomodo-type": "Sharded Cluster",
                     "tomodo-data-dir": host_data_path,
-                    "tomodo-container-data-dir": f"/data/{name}-db",
+                    "tomodo-container-data-dir": "/data/db",
                     "tomodo-shard-id": "0",
                     "tomodo-shard-count": "2",
-                    "tomodo-arbiter": "0"
+                    "tomodo-arbiter": "0",
+                    "tomodo-ephemeral": "0"
                 }
             )
         )

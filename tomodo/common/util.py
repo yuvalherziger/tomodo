@@ -11,6 +11,7 @@ from typing import Tuple, Type, Dict, Union, List, Any
 import docker
 from docker.errors import APIError, DockerException
 from docker.models.containers import Container
+from pymongo import MongoClient
 from rich.console import Console
 
 from tomodo.common.config import ProvisionerConfig
@@ -126,46 +127,40 @@ def run_mongo_shell_command(mongo_cmd: str, mongod: Mongod, shell: str = "mongos
     if not container:
         raise Exception(f"Could not find the container '{mongod.container_id}'")
     hostname = mongod.hostname
-    is_atlas = isinstance(mongod, AtlasDeployment)
-    # First check if the desired MongoDB shell exists in the container:
-    if is_atlas:
-        shell = "mongosh"
-        hostname = "localhost"
-    else:
-        shell_check_exit_code, _ = container.exec_run(cmd=["which", shell])
+
+    shell_check_exit_code, _ = container.exec_run(cmd=["which", shell])
+    if shell_check_exit_code != 0:
+        if shell != "mongo":
+            logger.debug(
+                "The '%s' shell could not be found in the container. Checking for the legacy 'mongo' shell",
+                shell)
+            shell = "mongo"
+            shell_check_exit_code, _ = container.exec_run(cmd=["which", shell])
         if shell_check_exit_code != 0:
-            if shell != "mongo":
-                logger.debug(
-                    "The '%s' shell could not be found in the container. Checking for the legacy 'mongo' shell",
-                    shell)
-                shell = "mongo"
-                shell_check_exit_code, _ = container.exec_run(cmd=["which", shell])
-            if shell_check_exit_code != 0:
-                logger.error("The '%s' shell could not be found in the container.", shell)
-                # No valid shell --> error out:
-                raise InvalidShellException
+            logger.error("The '%s' shell could not be found in the container.", shell)
+            # No valid shell --> error out:
+            raise InvalidShellException
     # If the output needs to be JSON-serialized by the tool, it's required to stringify it with mongosh:
     if shell == "mongosh" and serialize_json:
         mongo_cmd = f"JSON.stringify({mongo_cmd})"
     cmd = [shell, hostname, "--quiet", "--norc", "--eval", mongo_cmd]
+
     if config and config.is_auth_enabled:
         cmd.extend(["--username", config.username])
         cmd.extend(["--password", config.password])
-    if is_atlas:
-        cmd.extend(["--port", str(mongod.port)])
     command_exit_code: int
     command_output: bytes
     command_exit_code, command_output = container.exec_run(cmd=cmd)
     caller = inspect.stack()[1][3]
     logger.debug("Docker-exec [%s]: command output: %s", caller, command_output.decode("utf-8").strip())
     logger.debug("Docker-exec [%s]: command exit code: %d", caller, command_exit_code)
-    return command_exit_code, cleanup_mongo_output(command_output.decode("utf-8").strip()), mongod.container_id
+    return command_exit_code, clean_up_mongo_output(command_output.decode("utf-8").strip()), mongod.container_id
 
 
-mongo_cpp_log_re = "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}\+[0-9]{4}\s+[A-Z]\s+.*$"
+mongo_log_re = "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}\+[0-9]{4}\s+[A-Z]\s+.*$"
 
 
-def cleanup_mongo_output(output: str) -> str:
+def clean_up_mongo_output(output: str) -> str:
     """
     Cleans up the Mongo shell output from mongod logs, to make it safer to parse the output.
 
@@ -174,7 +169,7 @@ def cleanup_mongo_output(output: str) -> str:
     """
     return "\n".join(
         row for row in output.split("\n") if
-        not re.match(mongo_cpp_log_re, row)
+        not re.match(mongo_log_re, row)
     )
 
 
