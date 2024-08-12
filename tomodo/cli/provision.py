@@ -247,7 +247,7 @@ def sharded(
 
 
 @cli.command(
-    help="Provision a local MongoDB Atlas deployment"
+    help="Provision a local MongoDB Atlas deployment (only ephemeral)"
 )
 def atlas(
         name: str = _name(),
@@ -275,6 +275,6 @@ def atlas(
         name=name, atlas=True, port=port,
         username=username, password=password,
         image_repo=image_repo, image_tag=image_tag,
-        network_name=network_name
+        network_name=network_name, ephemeral=True
     )
     _provision(config=config)

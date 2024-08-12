@@ -77,7 +77,8 @@ def provision_atlas_instance(name: str = None,
         password=password,
         image_repo=image_repo,
         image_tag=image_tag,
-        network_name=network_name
+        network_name=network_name,
+        ephemeral=True
     )
     provisioner = Provisioner(config=config)
     reader = Reader()

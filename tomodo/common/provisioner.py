@@ -384,16 +384,6 @@ tomodo describe --name {self.config.name}
         mounts = []
         host_path = ""
         container_path = ""
-        if not self.config.ephemeral:
-            home_dir = os.path.expanduser("~")
-            data_dir_name = f".tomodo/data/{name}-db"
-            data_dir_path = os.path.join(home_dir, data_dir_name)
-            os.makedirs(data_dir_path, exist_ok=True)
-            host_path = os.path.abspath(data_dir_path)
-            container_path = "/data/db"
-            mounts = [Mount(
-                target=container_path, source=host_path, type="bind", read_only=False
-            )]
 
         logger.info("Creating container from '%s'. Port %d will be exposed to your host", image, port)
         networking_config = NetworkingConfig(
@@ -423,6 +413,7 @@ tomodo describe --name {self.config.name}
                 "tomodo-role": "atlas",
                 "tomodo-type": "Atlas Deployment",
                 "tomodo-shard-count": str(self.config.shards or 0),
+                "tomodo-ephemeral": str(int(self.config.ephemeral))
             }
         ), host_path, container_path
 
