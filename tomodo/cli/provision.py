@@ -179,7 +179,7 @@ def replica_set(
 
 
 @cli.command(
-    help="Provision a MongoDB sharded cluster"
+    help="Provision a MongoDB sharded cluster (authentication currently not supported)"
 )
 def sharded(
         replicas: Replicas = typer.Option(
@@ -209,18 +209,6 @@ def sharded(
             min=1,
             help="The number of mongos routers"
         ),
-        auth: bool = typer.Option(
-            default=False,
-            help="Whether to enable authentication (currently ignored)"
-        ),
-        username: str = typer.Option(
-            default=None,
-            help="Optional authentication username"
-        ),
-        password: str = typer.Option(
-            default=None,
-            help="Optional authentication password"
-        ),
         auth_db: str = typer.Option(
             default=None,
             help="Authorization DB (currently ignored)"
@@ -238,8 +226,7 @@ def sharded(
     config = ProvisionerConfig(
         replicas=int(replicas.value), shards=shards,
         arbiter=arbiter, name=name, priority=priority,
-        sharded=True, port=port, config_servers=config_servers, mongos=mongos,
-        auth=auth, username=username, password=password, auth_db=auth_db,
+        sharded=True, port=port, config_servers=config_servers, mongos=mongos, auth_db=auth_db,
         auth_roles=auth_roles.split(" "), image_repo=image_repo, image_tag=image_tag,
         network_name=network_name, ephemeral=ephemeral
     )

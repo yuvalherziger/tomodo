@@ -269,7 +269,7 @@ tomodo describe --name {self.config.name}
         for port in ports:
             idx = port - start_port + 1
             members.append(
-                Mongod(
+                (ConfigServer if config_svr else Mongod)(
                     port=port,
                     hostname=f"mongodb://{replicaset.name}-{idx}:{port}",
                     name=f"{replicaset.name}-{idx}",
@@ -482,9 +482,10 @@ tomodo describe --name {self.config.name}
             command.extend(["--dbpath", container_path, "--logpath", f"{container_path}/mongod.log"])
 
         environment = []
-        if self.config.username and self.config.password:
+        if self.config.username and self.config.password and not self.config.sharded:
             environment = [f"MONGO_INITDB_ROOT_USERNAME={self.config.username}",
                            f"MONGO_INITDB_ROOT_PASSWORD={self.config.password}"]
+
             keyfile_path = os.path.abspath(os.path.join(home_dir, ".tomodo/mongo_keyfile"))
             
 
