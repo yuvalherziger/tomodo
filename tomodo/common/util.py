@@ -11,12 +11,11 @@ from typing import Tuple, Type, Dict, Union, List, Any
 import docker
 from docker.errors import APIError, DockerException
 from docker.models.containers import Container
-from pymongo import MongoClient
 from rich.console import Console
 
 from tomodo.common.config import ProvisionerConfig
 from tomodo.common.errors import InvalidShellException
-from tomodo.common.models import Mongod, AtlasDeployment
+from tomodo.common.models import ConfigServer, Mongod, Mongos
 
 io = io.StringIO()
 
@@ -145,7 +144,7 @@ def run_mongo_shell_command(mongo_cmd: str, mongod: Mongod, shell: str = "mongos
         mongo_cmd = f"JSON.stringify({mongo_cmd})"
     cmd = [shell, hostname, "--quiet", "--norc", "--eval", mongo_cmd]
 
-    if config and config.is_auth_enabled:
+    if config and config.is_auth_enabled and not isinstance(mongod, ConfigServer) and not isinstance(mongod, Mongos):
         cmd.extend(["--username", config.username])
         cmd.extend(["--password", config.password])
     command_exit_code: int

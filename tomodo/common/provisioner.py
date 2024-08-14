@@ -269,7 +269,7 @@ tomodo describe --name {self.config.name}
         for port in ports:
             idx = port - start_port + 1
             members.append(
-                Mongod(
+                (ConfigServer if config_svr else Mongod)(
                     port=port,
                     hostname=f"mongodb://{replicaset.name}-{idx}:{port}",
                     name=f"{replicaset.name}-{idx}",
@@ -482,23 +482,23 @@ tomodo describe --name {self.config.name}
             command.extend(["--dbpath", container_path, "--logpath", f"{container_path}/mongod.log"])
 
         environment = []
-        if self.config.username and self.config.password:
+        if self.config.username and self.config.password and not self.config.sharded:
             environment = [f"MONGO_INITDB_ROOT_USERNAME={self.config.username}",
                            f"MONGO_INITDB_ROOT_PASSWORD={self.config.password}"]
-            if not self.config.ephemeral:               
-                keyfile_path = os.path.abspath(os.path.join(home_dir, ".tomodo/mongo_keyfile"))
-                
 
-                if not os.path.isfile(keyfile_path):
-                    random_bytes = secrets.token_bytes(756)
-                    base64_bytes = base64.b64encode(random_bytes)
-                    with open(keyfile_path, "wb") as file:
-                        file.write(base64_bytes)
-                    os.chmod(keyfile_path, 0o400)
-                mounts.append(
-                    Mount(target="/etc/mongo/mongo_keyfile", source=keyfile_path, type="bind")
-                )
-                command.extend(["--keyFile", "/etc/mongo/mongo_keyfile"])
+            keyfile_path = os.path.abspath(os.path.join(home_dir, ".tomodo/mongo_keyfile"))
+            
+
+            if not os.path.isfile(keyfile_path):
+                random_bytes = secrets.token_bytes(756)
+                base64_bytes = base64.b64encode(random_bytes)
+                with open(keyfile_path, "wb") as file:
+                    file.write(base64_bytes)
+                os.chmod(keyfile_path, 0o400)
+            mounts.append(
+                Mount(target="/data/db/mongo_keyfile", source=keyfile_path, type="bind")
+            )
+            command.extend(["--keyFile", "/data/db/mongo_keyfile"])
         deployment_type = "Standalone"
         if config_svr:
             command.extend(["--configsvr", "--replSet", replset_name])
