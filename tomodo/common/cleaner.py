@@ -94,6 +94,8 @@ class Cleaner:
         container: Container = self.docker_client.containers.get(container_id)
         container.remove(force=True)
         if data_path is not None:
+            if data_path.strip() == "" or data_path.strip() == "/":
+                return
             logger.info("The following data directory will be deleted: '%s'", data_path)
             if os.path.exists(data_path):
                 try:

@@ -186,6 +186,7 @@ tomodo describe --name {self.config.name}
             members=config_servers,
             size=self.config.config_servers
         )
+        print("is it?" + str(isinstance(config_servers[0], ConfigServer)))
         self.provision_replica_set(replicaset=config_svr_replicaset, config_svr=True, sh_cluster=True)
 
         sharded_cluster.config_svr_replicaset = config_svr_replicaset
@@ -269,7 +270,7 @@ tomodo describe --name {self.config.name}
         for port in ports:
             idx = port - start_port + 1
             members.append(
-                Mongod(
+                (ConfigServer if config_svr else Mongod)(
                     port=port,
                     hostname=f"mongodb://{replicaset.name}-{idx}:{port}",
                     name=f"{replicaset.name}-{idx}",
@@ -343,8 +344,10 @@ tomodo describe --name {self.config.name}
 
         try:
             exit_code, output, _ = run_mongo_shell_command(mongo_cmd=mongo_cmd, mongod=mongod, config=self.config)
+            print(output)
             is_ready = int(output) == 1
         except Exception as e:
+            print(str(e))
             logger.debug(str(e))
             is_ready = False
         if not is_ready:
@@ -417,10 +420,27 @@ tomodo describe --name {self.config.name}
             }
         ), host_path, container_path
 
+    def get_key_file(self) -> str:
+        home_dir = os.path.expanduser("~")
+        keyfile_path = os.path.abspath(os.path.join(home_dir, ".tomodo/mongo_keyfile"))
+
+        if not os.path.isfile(keyfile_path):
+            random_bytes = secrets.token_bytes(756)
+            base64_bytes = base64.b64encode(random_bytes)
+            keyfile_str: str = base64_bytes.decode("utf-8")
+            with open(keyfile_path, "wb") as file:
+                file.write(base64_bytes)
+            os.chmod(keyfile_path, 0o400)
+        else:
+            with open(keyfile_path, "r") as file:
+                keyfile_str: str = file.read()
+        return keyfile_str
+
     def create_mongos_container(self, port: int, name: str, config_svr_replicaset: ReplicaSet):
         repo = self.config.image_repo
         tag = self.config.image_tag
         image = f"{repo}:{tag}"
+        environment = []
         logger.info("Creating container from '%s'. Port %d will be exposed to your host", image, port)
         command = [
             "mongos",
@@ -433,6 +453,18 @@ tomodo describe --name {self.config.name}
                 self.network.name: EndpointConfig(version=DOCKER_ENDPOINT_CONFIG_VER, aliases=[name])
             }
         )
+        pre_commands = []
+        # home_dir = os.path.expanduser("~")
+        # if self.config.username and self.config.password:
+        #     # environment = [f"MONGO_INITDB_ROOT_USERNAME={self.config.username}",
+        #     #                f"MONGO_INITDB_ROOT_PASSWORD={self.config.password}"]
+        #     keyfile_str: str = self.get_key_file()
+        #     pre_commands.append(f"echo \"{keyfile_str}\" >> /data/mongo_keyfile")
+        #     pre_commands.append("chmod 400 /data/mongo_keyfile")
+        #     pre_commands.append("chown 999:999 /data/mongo_keyfile")
+        #     command.extend(["--keyFile", "/data/mongo_keyfile"])
+
+        pre_commands_str = "\n".join(pre_commands)
         return self.docker_client.containers.run(
             f"{repo}:{tag}",
             detach=True,
@@ -441,7 +473,13 @@ tomodo describe --name {self.config.name}
             network=self.network.id,
             hostname=name,
             name=name,
-            command=command,
+            # command=command,
+            entrypoint=[
+                "bash", "-c",
+                f'''{pre_commands_str}
+exec docker-entrypoint.sh {" ".join(command)}'''
+            ],
+            environment=environment,
             networking_config=networking_config,
             labels={
                 "source": "tomodo",
@@ -457,6 +495,10 @@ tomodo describe --name {self.config.name}
     def create_mongod_container(self, port: int, name: str, replset_name: str = None,
                                 config_svr: bool = False, sh_cluster: bool = False, shard_id: int = 0,
                                 arbiter: bool = False) -> Container:
+        # TODO: problem starting the config server containers with authentication,
+        #       probably because of the entrypoint script. Alternatives
+        #       Option 1: debug to resolve 👍
+        #       Option 2: use bind mounts for sharded clusters and disallow ephemeral sharded clusters. 👎
         repo = self.config.image_repo
         tag = self.config.image_tag
         image = f"{repo}:{tag}"
@@ -464,6 +506,7 @@ tomodo describe --name {self.config.name}
         host_path = ""
         container_path = ""
         mounts = []
+        pre_commands = []
         command = [
             "mongod",
             "--bind_ip_all",
@@ -483,25 +526,18 @@ tomodo describe --name {self.config.name}
 
         environment = []
         if self.config.username and self.config.password:
+            if config_svr:
+                command.append("--auth")
             environment = [f"MONGO_INITDB_ROOT_USERNAME={self.config.username}",
                            f"MONGO_INITDB_ROOT_PASSWORD={self.config.password}"]
-            if not self.config.ephemeral:               
-                keyfile_path = os.path.abspath(os.path.join(home_dir, ".tomodo/mongo_keyfile"))
-                
-
-                if not os.path.isfile(keyfile_path):
-                    random_bytes = secrets.token_bytes(756)
-                    base64_bytes = base64.b64encode(random_bytes)
-                    with open(keyfile_path, "wb") as file:
-                        file.write(base64_bytes)
-                    os.chmod(keyfile_path, 0o400)
-                mounts.append(
-                    Mount(target="/etc/mongo/mongo_keyfile", source=keyfile_path, type="bind")
-                )
-                command.extend(["--keyFile", "/etc/mongo/mongo_keyfile"])
+            keyfile_str: str = self.get_key_file()
+            pre_commands.append(f"echo \"{keyfile_str}\" >> /data/mongo_keyfile")
+            pre_commands.append("chmod 400 /data/mongo_keyfile")
+            pre_commands.append("chown 999:999 /data/mongo_keyfile")
+            command.extend(["--keyFile", "/data/mongo_keyfile"])
         deployment_type = "Standalone"
         if config_svr:
-            command.extend(["--configsvr", "--replSet", replset_name])
+            command.extend(["--replSet", replset_name, "--configsvr"])
             deployment_type = "Sharded Cluster"
         elif self.config.replica_set:
             command.extend(["--replSet", replset_name])
@@ -515,6 +551,8 @@ tomodo describe --name {self.config.name}
             }
         )
 
+        # cmd_str = " ".join(command)
+        pre_commands_str = "\n".join(pre_commands)
         return self.docker_client.containers.run(
             f"{repo}:{tag}",
             detach=True,
@@ -523,7 +561,16 @@ tomodo describe --name {self.config.name}
             network=self.network.id,
             hostname=name,
             name=name,
-            command=command,
+            # command=command,
+            entrypoint=[
+                "bash", "-c",
+                f'''{pre_commands_str}
+exec docker-entrypoint.sh {" ".join(command)}'''
+            ],
+            # command=[
+            #     "bash", "-c",
+            #     " && ".join(cmd)
+            # ],
             mounts=mounts,
             networking_config=networking_config,
             environment=environment,

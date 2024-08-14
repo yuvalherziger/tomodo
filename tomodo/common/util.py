@@ -16,7 +16,7 @@ from rich.console import Console
 
 from tomodo.common.config import ProvisionerConfig
 from tomodo.common.errors import InvalidShellException
-from tomodo.common.models import Mongod, AtlasDeployment
+from tomodo.common.models import Mongod, AtlasDeployment, ConfigServer, Mongos
 
 io = io.StringIO()
 
@@ -145,9 +145,10 @@ def run_mongo_shell_command(mongo_cmd: str, mongod: Mongod, shell: str = "mongos
         mongo_cmd = f"JSON.stringify({mongo_cmd})"
     cmd = [shell, hostname, "--quiet", "--norc", "--eval", mongo_cmd]
 
-    if config and config.is_auth_enabled:
+    if config and config.is_auth_enabled and not isinstance(mongod, Mongos):
         cmd.extend(["--username", config.username])
         cmd.extend(["--password", config.password])
+    print(cmd)
     command_exit_code: int
     command_output: bytes
     command_exit_code, command_output = container.exec_run(cmd=cmd)

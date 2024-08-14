@@ -59,6 +59,7 @@ class Deployment:
 
 
 class Mongod(Deployment):
+    is_cfg_svr = False
     port: int
     hostname: str
     name: str
@@ -167,7 +168,7 @@ class Mongos(Mongod):
 
 
 class ConfigServer(Mongod):
-    pass
+    is_cfg_svr = True
 
 
 class ReplicaSet(Deployment):
