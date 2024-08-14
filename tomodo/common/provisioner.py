@@ -485,20 +485,19 @@ tomodo describe --name {self.config.name}
         if self.config.username and self.config.password:
             environment = [f"MONGO_INITDB_ROOT_USERNAME={self.config.username}",
                            f"MONGO_INITDB_ROOT_PASSWORD={self.config.password}"]
-            if not self.config.ephemeral:               
-                keyfile_path = os.path.abspath(os.path.join(home_dir, ".tomodo/mongo_keyfile"))
-                
+            keyfile_path = os.path.abspath(os.path.join(home_dir, ".tomodo/mongo_keyfile"))
+            
 
-                if not os.path.isfile(keyfile_path):
-                    random_bytes = secrets.token_bytes(756)
-                    base64_bytes = base64.b64encode(random_bytes)
-                    with open(keyfile_path, "wb") as file:
-                        file.write(base64_bytes)
-                    os.chmod(keyfile_path, 0o400)
-                mounts.append(
-                    Mount(target="/etc/mongo/mongo_keyfile", source=keyfile_path, type="bind")
-                )
-                command.extend(["--keyFile", "/etc/mongo/mongo_keyfile"])
+            if not os.path.isfile(keyfile_path):
+                random_bytes = secrets.token_bytes(756)
+                base64_bytes = base64.b64encode(random_bytes)
+                with open(keyfile_path, "wb") as file:
+                    file.write(base64_bytes)
+                os.chmod(keyfile_path, 0o400)
+            mounts.append(
+                Mount(target="/data/db/mongo_keyfile", source=keyfile_path, type="bind")
+            )
+            command.extend(["--keyFile", "/data/db/mongo_keyfile"])
         deployment_type = "Standalone"
         if config_svr:
             command.extend(["--configsvr", "--replSet", replset_name])

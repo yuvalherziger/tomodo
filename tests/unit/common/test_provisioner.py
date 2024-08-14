@@ -396,7 +396,7 @@ class TestProvisioner:
                 )
                 if authenticated:
                     environment = ["MONGO_INITDB_ROOT_USERNAME=username", "MONGO_INITDB_ROOT_PASSWORD=password"]
-                    cmd_extra = ["--keyFile", "/etc/mongo/mongo_keyfile"]
+                    cmd_extra = ["--keyFile", "/data/db/mongo_keyfile"]
                     if not key_exists:
                         mocked_keyfile().write.assert_called_once()
         assert_partial_call(

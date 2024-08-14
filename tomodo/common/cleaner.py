@@ -94,12 +94,14 @@ class Cleaner:
         container: Container = self.docker_client.containers.get(container_id)
         container.remove(force=True)
         if data_path is not None:
+            if data_path.strip() == "" or data_path.strip() == "/":
+                return
             logger.info("The following data directory will be deleted: '%s'", data_path)
             if os.path.exists(data_path):
                 try:
                     shutil.rmtree(data_path)
                     logger.info("Directory '%s' has been successfully deleted", data_path)
                 except Exception as e:
-                    logger.error("An error occurred while trying to remove '%s'", data_path)
+                    logger.error("An error occurred while trying to remove '%s'; You can delete the folder manually", data_path)
             else:
                 logger.warning("Directory '%s' does not exist", data_path)
