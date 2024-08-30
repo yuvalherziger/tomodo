@@ -13,8 +13,8 @@ ARG PORT=27017
 
 EXPOSE $PORT
 
-CMD curl -OL ${OM_URL}/download/agent/automation/mongodb-mms-automation-agent-manager_107.0.10.8627-1_arm64.ubuntu2204.deb \
-    && dpkg -i mongodb-mms-automation-agent-manager_107.0.10.8627-1_arm64.ubuntu2204.deb \
+CMD curl -OL ${OM_URL}/download/agent/automation/mongodb-mms-automation-agent-manager_latest_arm64.ubuntu2204.deb \
+    && dpkg -i mongodb-mms-automation-agent-manager_latest_arm64.ubuntu2204.deb \
     && touch /etc/mongodb-mms/automation-agent.config \
     && echo "mmsGroupId=${PROJECT_ID}" >> /etc/mongodb-mms/automation-agent.config \
     && echo "mmsApiKey=${API_KEY}" >> /etc/mongodb-mms/automation-agent.config \
