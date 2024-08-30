@@ -26,7 +26,7 @@ from tomodo.common.errors import (
 from tomodo.common.models import Mongod, ReplicaSet, ShardedCluster, Mongos, Shard, ConfigServer, Deployment, \
     AtlasDeployment
 from tomodo.common.util import (
-    is_port_range_available, with_retry, run_mongo_shell_command
+    is_port_range_available, with_retry, run_mongo_shell_command, get_os
 )
 
 DOCKER_ENDPOINT_CONFIG_VER = "1.43"
@@ -484,6 +484,7 @@ tomodo describe --name {self.config.name}
             command.extend(["--dbpath", container_path, "--logpath", f"{container_path}/mongod.log"])
 
         environment = []
+        target_keyfile_path = "/etc/mongo/mongo_keyfile" if get_os() == "macOS" else "/data/db/mongo_keyfile"
         if self.config.username and self.config.password and not self.config.sharded:
             environment = [f"MONGO_INITDB_ROOT_USERNAME={self.config.username}",
                            f"MONGO_INITDB_ROOT_PASSWORD={self.config.password}"]
@@ -497,9 +498,9 @@ tomodo describe --name {self.config.name}
                     file.write(base64_bytes)
                 os.chmod(keyfile_path, 0o400)
             mounts.append(
-                Mount(target="/data/db/mongo_keyfile", source=keyfile_path, type="bind")
+                Mount(target=target_keyfile_path, source=keyfile_path, type="bind")
             )
-            command.extend(["--keyFile", "/data/db/mongo_keyfile"])
+            command.extend(["--keyFile", target_keyfile_path])
         deployment_type = "Standalone"
         if config_svr:
             command.extend(["--configsvr", "--replSet", replset_name])
