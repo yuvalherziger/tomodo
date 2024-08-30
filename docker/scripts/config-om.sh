@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+#
+# THIS SCRIPT IS A SLIGHT MODIFICATION OF https://github.com/mongodb-labs/omida/
+#
+
 HTTP_PORT=${MMS_PORT:-9080}
 HTTPS_PORT=${MMS_SSL_PORT:-9443}
 

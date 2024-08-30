@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -ueo pipefail
 
+#
+# THIS SCRIPT IS A SLIGHT MODIFICATION OF https://github.com/mongodb-labs/omida/
+#
+
 _find_om_archive_by_version() {
     if [[ "$#" -lt 4 ]]; then
         echo "Usage: _find_om_archive_by_version VERSION ARCH PACKAGE_FORMAT FILE_TYPE"
