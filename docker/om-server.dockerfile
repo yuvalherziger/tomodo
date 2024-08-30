@@ -3,6 +3,7 @@ FROM ubuntu:22.04
 RUN apt-get update \
      && export DEBIAN_FRONTEND=noninteractive \
      && apt-get -y install --no-install-recommends curl ca-certificates \
+     && apt-get -y install libcurl4 libgssapi-krb5-2 libldap-2.5-0 libwrap0 libsasl2-2 libsasl2-modules libsasl2-modules-gssapi-mit snmp openssl liblzma5 \
      && apt-get clean -y \
      && update-ca-certificates
 
