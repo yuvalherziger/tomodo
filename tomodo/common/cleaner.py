@@ -1,12 +1,14 @@
 import logging
 import os
 import shutil
-from typing import Dict
+from typing import Dict, List
 
 import docker
 from docker.models.containers import Container
 
-from tomodo.common.models import ReplicaSet, ShardedCluster, Mongod, Deployment, AtlasDeployment
+from tomodo.common.errors import DeploymentNotFound
+from tomodo.common.models import ReplicaSet, ShardedCluster, Mongod, Deployment, AtlasDeployment, OpsManagerInstance, \
+    OpsManagerDeploymentServerGroup
 from tomodo.common.reader import Reader
 
 logger = logging.getLogger("rich")
@@ -55,11 +57,19 @@ class Cleaner:
         names = deployments.keys()
         logger.info("This action will delete all of the following deployments: %s", ", ".join(names))
         for name in names:
-            self.delete_deployment(name)
+            try:
+                self.reader.get_deployment_by_name(name)
+                self.delete_deployment(name)
+            except DeploymentNotFound:
+                pass
 
     def delete_deployment(self, name: str) -> None:
         deployment = self.reader.get_deployment_by_name(name, include_stopped=True)
         logger.info("This action will delete the '%s' deployment permanently, including its data", name)
+        if isinstance(deployment, OpsManagerInstance):
+            self._delete_ops_manager_containers(deployment.name)
+        if isinstance(deployment, OpsManagerDeploymentServerGroup):
+            self._delete_ops_manager_containers(deployment.ops_manager_name)
         if isinstance(deployment, ReplicaSet):
             for member in deployment.members:
                 logger.info("Deleting replica set member in container %s", member.container_id)
@@ -102,6 +112,15 @@ class Cleaner:
                     shutil.rmtree(data_path)
                     logger.info("Directory '%s' has been successfully deleted", data_path)
                 except Exception as e:
-                    logger.error("An error occurred while trying to remove '%s'; You can delete the folder manually", data_path)
+                    logger.error("An error occurred while trying to remove '%s'; You can delete the folder manually",
+                                 data_path)
             else:
                 logger.warning("Directory '%s' does not exist", data_path)
+
+    def _delete_ops_manager_containers(self, name: str):
+        container_filters = {"label": f"tomodo-parent={name}"}
+        containers: List[Container] = self.docker_client.containers.list(filters=container_filters, all=True)
+        for container in containers:
+            container.remove(force=True)
+        logger.info("Containers associated with Ops Manager instance '%s' were removed", name)
+        self.delete_deployment(f"{name}-app-db")

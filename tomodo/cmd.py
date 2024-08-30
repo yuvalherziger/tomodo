@@ -13,7 +13,7 @@ from rich.syntax import Syntax
 from ruamel.yaml import YAML
 
 from tomodo import TOMODO_VERSION
-from tomodo.cli import provision, tags
+from tomodo.cli import provision, tags, ops_manager
 from tomodo.common.cleaner import Cleaner
 from tomodo.common.errors import DeploymentNotFound, TomodoError
 from tomodo.common.models import Deployment
@@ -68,6 +68,7 @@ def version():
 
 cli.add_typer(provision.cli, name="provision")
 cli.add_typer(tags.cli, name="tags")
+cli.add_typer(ops_manager.cli, name="ops-manager")
 
 
 @cli.command(
@@ -260,6 +261,7 @@ def remove(
         except typer.Abort:
             pass
         except TomodoError as e:
+            print(type(e))
             logger.error(str(e))
             exit(1)
         except Exception as e:
