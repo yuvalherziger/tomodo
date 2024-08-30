@@ -100,6 +100,10 @@ class Mongod(Deployment):
     def port_range(self) -> str:
         return str(self.port)
 
+    @property
+    def hostname(self) -> str:
+        return f"mongodb://{self.name}:{self.port}/"
+
     def as_markdown_table(self) -> str:
         headers = ["Name", "Port", "Type", "Hostname", "Container ID"]
         rows = [
@@ -160,6 +164,10 @@ class Mongod(Deployment):
         mongod.mongo_version = mongo_version
         mongod.last_known_state = "running" if container.status == "running" else "stopped"
         return mongod
+
+    @hostname.setter
+    def hostname(self, value):
+        self._hostname = value
 
 
 class Mongos(Mongod):
@@ -514,3 +522,97 @@ class ShardedCluster(Deployment):
             sharded_cluster.last_known_state = "stopped"
         sharded_cluster.mongo_version = mongo_version
         return sharded_cluster
+
+
+class OpsManagerInstance(Deployment):
+    deployment_type = "Ops Manager"
+    container_count: int = 1
+
+    def __init__(self, port: int, name: str, network_name: str, container_id: str, mongo_version: str,
+                 last_known_state: str):
+        self.port = port
+        self.name = name
+        self.network_url = f"http://{name}:{port}"
+        self.external_url = f"http://localhost:{port}"
+        self.network_name = network_name
+        self.container_id = container_id
+        self.mongo_version = mongo_version
+        self.port_range = str(port)
+        self.last_known_state = last_known_state
+
+    @staticmethod
+    def from_container_details(details: Dict) -> "OpsManagerInstance":
+        container: Container = details.get("tomodo-container")
+        mongo_version = details.get("tomodo-mongo-version")
+        return OpsManagerInstance(
+            port=details.get("tomodo-port"),
+            name=details.get("tomodo-name"),
+            network_name=details.get("tomodo-network"),
+            container_id=container.short_id,
+            mongo_version=mongo_version,
+            last_known_state=container.status
+        )
+
+    def as_markdown_table(self) -> str:
+        headers = ["Name", "Port", "Type", "Hostname", "Container ID"]
+        rows = [
+            f"**{self.name} (standalone):**",
+            "| " + " | ".join(headers) + " |",
+            "| " + "|".join(["------" for _ in range(len(headers))]) + " |",
+        ]
+        cells = [
+            self.name,
+            str(self.port),
+            "mongod",
+            f"{self.name}:{self.port}",
+            self.container_id or "N/A"
+        ]
+        rows.append("| " + "|".join(cells) + " |")
+        return "\n".join(rows)
+
+
+class OpsManagerDeploymentServerGroup(Deployment):
+    deployment_type = "Ops Manager Deployment Server"
+
+    def __init__(self, name: str, start_port: int, port: int, ops_manager_name: str, container_id: str,
+                 container_count: int, last_known_state: str):
+        self.name = name
+        self.port = port
+        self.ops_manager_name = ops_manager_name
+        self.container_id = container_id
+        self.container_count = container_count
+        if container_count and start_port:
+            self.port_range = f"{str(start_port)}-{str(int(start_port) + int(container_count) - 1)}"
+        self.mongo_version = "-- Check OM --"
+        self.last_known_state = last_known_state
+
+    @staticmethod
+    def from_container_details(details: Dict) -> "OpsManagerDeploymentServerGroup":
+        container: Container = details.get("tomodo-container")
+        container_count: int = details.get("tomodo-group-size")
+        return OpsManagerDeploymentServerGroup(
+            port=details.get("tomodo-port"),
+            start_port=details.get("tomodo-start-port"),
+            name=details.get("tomodo-name"),
+            ops_manager_name=details.get("tomodo-parent"),
+            container_id=container.short_id,
+            container_count=container_count,
+            last_known_state=container.status
+        )
+
+    def as_markdown_table(self) -> str:
+        headers = ["Name", "Port", "Type", "Hostname", "Container ID"]
+        rows = [
+            f"**{self.name} (standalone):**",
+            "| " + " | ".join(headers) + " |",
+            "| " + "|".join(["------" for _ in range(len(headers))]) + " |",
+        ]
+        cells = [
+            self.name,
+            str(self.port),
+            "mongod",
+            f"{self.name}:{self.port}",
+            self.container_id or "N/A"
+        ]
+        rows.append("| " + "|".join(cells) + " |")
+        return "\n".join(rows)

@@ -41,3 +41,30 @@ class ProvisionerConfig:
     @property
     def is_auth_enabled(self) -> bool:
         return self.username is not None and self.password is not None
+
+
+class OpsManagerConfig:
+
+    def __init__(self, app_db_config: ProvisionerConfig, name: str = None, port: int = 9080):
+        self.name = name or get_random_name(combo=[ADJECTIVES, ANIMALS], separator="-", style="lowercase")
+        self.port = port
+        app_db_config.name = f"{self.name}-app-db"
+        self.app_db_config = app_db_config
+
+
+class AgentConfig:
+
+    def __init__(self, om_name: str, project_id: str, api_key: str):
+        self.om_name = om_name
+        self.project_id = project_id
+        self.api_key = api_key
+
+
+class OpsManagerServerConfig:
+
+    def __init__(self, agent_config: AgentConfig, name: str = None, port: int = 9080,
+                 count: int = 1):
+        self.name = name or get_random_name(combo=[ADJECTIVES, ANIMALS], separator="-", style="lowercase")
+        self.port = port
+        self.agent_config = agent_config
+        self.count = count

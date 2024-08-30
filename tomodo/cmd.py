@@ -261,6 +261,7 @@ def remove(
         except typer.Abort:
             pass
         except TomodoError as e:
+            print(type(e))
             logger.error(str(e))
             exit(1)
         except Exception as e:

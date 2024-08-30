@@ -59,7 +59,8 @@ class Provisioner:
         except Exception:
             raise
 
-    def provision(self, deployment_getter: callable) -> Union[Mongod, ReplicaSet, ShardedCluster, AtlasDeployment]:
+    def provision(self, deployment_getter: callable, print_summary: bool = True) -> Union[
+        Mongod, ReplicaSet, ShardedCluster, AtlasDeployment]:
         if sum([self.config.standalone, self.config.replica_set, self.config.sharded, self.config.atlas]) != 1:
             logger.error("Exactly one of the following has to be specified: standalone, replica-set, sharded, or atlas")
             raise InvalidConfiguration
@@ -90,8 +91,9 @@ class Provisioner:
             deployment: ShardedCluster = self.provision_sharded_cluster()
         elif self.config.atlas:
             deployment: AtlasDeployment = self.provision_atlas_deployment()
-        self.print_deployment_summary(deployment=deployment)
-        self.print_connection_details(deployment=deployment)
+        if print_summary:
+            self.print_deployment_summary(deployment=deployment)
+            self.print_connection_details(deployment=deployment)
         return deployment
 
     def print_deployment_summary(self, deployment: Deployment = None):
@@ -487,7 +489,6 @@ tomodo describe --name {self.config.name}
                            f"MONGO_INITDB_ROOT_PASSWORD={self.config.password}"]
 
             keyfile_path = os.path.abspath(os.path.join(home_dir, ".tomodo/mongo_keyfile"))
-            
 
             if not os.path.isfile(keyfile_path):
                 random_bytes = secrets.token_bytes(756)
@@ -543,13 +544,14 @@ tomodo describe --name {self.config.name}
             }
         ), host_path, container_path
 
-    def get_network(self) -> Network:
-        networks = self.docker_client.networks.list(filters={"name": self.config.network_name})
+    def get_network(self, name: str = None) -> Network:
+        name = name or self.config.network_name
+        networks = self.docker_client.networks.list(filters={"name": name})
         if len(networks) > 0:
             network = networks[0]
             logger.info("At least one Docker network exists with the name '%s'. Picking the first one [id: %s]",
                         network.name, network.short_id)
         else:
-            network = self.docker_client.networks.create(name=self.config.network_name)
-            logger.info("Docker network '%s' was created [id: %s]", self.config.network_name, network.short_id)
+            network = self.docker_client.networks.create(name=name)
+            logger.info("Docker network '%s' was created [id: %s]", name, network.short_id)
         return network

@@ -76,7 +76,7 @@ class TestReader:
         deployment = marshal_deployment(components=[component])
         assert isinstance(deployment, Mongod)
         assert deployment.port == 27017
-        assert deployment.hostname == container_name
+        assert deployment.hostname == "mongodb://unit-test:27017/"
         assert deployment.container_id == container_id[:12]
         assert deployment.last_known_state == "running"
 

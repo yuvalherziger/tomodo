@@ -9,8 +9,9 @@ RUN apt-get update \
 ARG OM_URL
 ARG PROJECT_ID
 ARG API_KEY
+ARG PORT=27017
 
-EXPOSE 27000
+EXPOSE $PORT
 
 CMD curl -OL ${OM_URL}/download/agent/automation/mongodb-mms-automation-agent-manager_107.0.10.8627-1_arm64.ubuntu2204.deb \
     && dpkg -i mongodb-mms-automation-agent-manager_107.0.10.8627-1_arm64.ubuntu2204.deb \

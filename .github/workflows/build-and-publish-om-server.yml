@@ -1,4 +1,4 @@
-name: Create and publish an Ops Manager Docker image
+name: Create and publish an Ops Manager Server Docker image
 
 on:
   release:
@@ -14,10 +14,7 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build-and-push-om-image:
-    strategy:
-      matrix:
-        om-version: [ "7.0.10" ]
+  build-and-push-server-image:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -46,9 +43,8 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v4
         with:
-          file: ./docker/om.dockerfile
+          file: ./docker/om-server.dockerfile
           push: true
-          tags: om-${{ matrix.om-version }}
+          tags: om-server-latest
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
-          build-args: VERSION=${{ matrix.om-version }}

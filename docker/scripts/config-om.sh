@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-declare -i MMS_PORT=9080
-declare -i MMS_SSL_PORT=9443
+HTTP_PORT=${MMS_PORT:-9080}
+HTTPS_PORT=${MMS_SSL_PORT:-9443}
 
 _replace_property_in_file() {
     # Parameter check
@@ -31,8 +31,8 @@ main() {
     done
 
     local conf="/root/mongodb-mms/conf/conf-mms.properties"
-    _replace_property_in_file "/root/mongodb-mms/conf/conf-mms.properties" "mongo.mongoUri" "mongodb://${appdb}"
-    _replace_property_in_file "/root/mongodb-mms/conf/conf-mms.properties" "mms.centralUrl" "http://$(ifconfig eth0 | grep -oP 'inet \K\S+'):9080"
+    _replace_property_in_file "/root/mongodb-mms/conf/conf-mms.properties" "mongo.mongoUri" "${appdb}"
+    _replace_property_in_file "/root/mongodb-mms/conf/conf-mms.properties" "mms.centralUrl" "http://$(ifconfig eth0 | grep -oP 'inet \K\S+'):${HTTP_PORT}"
 
     # Configure backup head
     local backup_dir="/root/mongodb-mms/head"
@@ -41,8 +41,8 @@ main() {
     _replace_property_in_file "$conf" "rootDirectory" "${backup_dir}/"
 
     # Configure ports
-    _replace_property_in_file "/root/mongodb-mms/conf/mms.conf" "BASE_PORT" "${MMS_PORT}"
-    _replace_property_in_file "/root/mongodb-mms/conf/mms.conf" "BASE_SSL_PORT" "${MMS_SSL_PORT}"
+    _replace_property_in_file "/root/mongodb-mms/conf/mms.conf" "BASE_PORT" "${HTTP_PORT}"
+    _replace_property_in_file "/root/mongodb-mms/conf/mms.conf" "BASE_SSL_PORT" "${HTTPS_PORT}"
 
     # Define and create the release automation dir, if not defined
     local automation_release_dir="/root/mongodb-mms/mongodb-releases/"
