@@ -17,9 +17,8 @@ DOCKER_ENDPOINT_CONFIG_VER = "1.43"
 
 console = Console()
 logger = logging.getLogger("rich")
-# TODO: Switch over when done debugging locally
-OM_REPO = "ghcr.io/yuvalherziger/tomodo"
-OM_TAG = "om-7.0.10"
+OM_REPO = "ghcr.io/yuvalherziger/tomodo-mms"
+OM_TAG = "main"
 APP_DB_VERSION = "7.0"
 
 READINESS_MAX_ATTEMPTS = 20

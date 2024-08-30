@@ -55,7 +55,6 @@ def create(
         exit(1)
 
 
-# TODO: multiple servers!
 @cli.command(
     help="Add one of more servers to Ops Manager. "
          "These servers can then be used in Ops Manager to deploy MongoDB instances."

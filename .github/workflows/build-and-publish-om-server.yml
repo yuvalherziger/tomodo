@@ -6,7 +6,6 @@ on:
   push:
     branches:
       - "main"
-      - "*"
   pull_request:
     types: [ opened ]
 
@@ -46,6 +45,6 @@ jobs:
         with:
           file: ./docker/om-server.dockerfile
           push: true
-          tags: ${{ steps.meta.outputs.tags }} # om-server-latest
+          tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64

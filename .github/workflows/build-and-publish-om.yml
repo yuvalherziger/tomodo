@@ -5,13 +5,13 @@ on:
     types: [ created ]
   push:
     branches:
-      - main
+      - "main"
   pull_request:
     types: [ opened ]
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  IMAGE_NAME: ${{ github.repository }}-mms
 
 jobs:
   build-and-push-om-image:
@@ -48,7 +48,7 @@ jobs:
         with:
           file: ./docker/om.dockerfile
           push: true
-          tags: om-${{ matrix.om-version }}
+          tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
           build-args: VERSION=${{ matrix.om-version }}
