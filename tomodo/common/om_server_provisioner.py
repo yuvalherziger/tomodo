@@ -19,8 +19,8 @@ DOCKER_ENDPOINT_CONFIG_VER = "1.43"
 console = Console()
 logger = logging.getLogger("rich")
 # TODO: Switch over when done debugging locally
-OM_REPO = "ghcr.io/yuvalherziger/tomodo-om-server"
-OM_TAG = "main"
+OM_SERVER_REPO = "ghcr.io/yuvalherziger/tomodo-om-server"
+OM_SERVER_TAG = "main"
 
 READINESS_MAX_ATTEMPTS = 60
 READINESS_DELAY = 1
@@ -45,7 +45,7 @@ class OpsManagerServerProvisioner(Provisioner):
             }
         )
         return self.docker_client.containers.run(
-            f"{OM_REPO}:{OM_TAG}",
+            f"{OM_SERVER_REPO}:{OM_SERVER_TAG}",
             detach=True,
             ports={f"{port}/tcp": port},
             platform=f"linux/{platform.machine()}",
@@ -77,6 +77,7 @@ class OpsManagerServerProvisioner(Provisioner):
         servers = self.server_config.count
         if not is_port_range_available(tuple(range(start_port, start_port + servers))):
             raise PortsTakenException
+        self.check_and_pull_image(image_name=f"{OM_SERVER_REPO}:{OM_SERVER_TAG}")
         om_name = self.server_config.agent_config.om_name
         om: OpsManagerInstance = Reader().get_deployment_by_name(om_name, get_group=False)
         network = self.get_network(om.network_name)

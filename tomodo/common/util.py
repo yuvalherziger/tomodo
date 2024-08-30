@@ -2,6 +2,7 @@ import functools
 import inspect
 import io
 import logging
+import platform
 import re
 import socket
 import time
@@ -189,3 +190,13 @@ def check_docker():
 
 def split_into_chunks(lst: List[Any], chunk_size: int = 20):
     return [lst[i:i + chunk_size] for i in range(0, len(lst), chunk_size)]
+
+
+def get_os():
+    os_platform = platform.system()
+    if os_platform == "Darwin":
+        return "macOS"
+    elif os_platform == "Linux":
+        return "Linux"
+    else:
+        return "Unknown OS"
