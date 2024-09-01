@@ -1,5 +1,6 @@
 import io
 import logging
+from enum import Enum
 from typing import List, Dict, Union
 
 import docker
@@ -16,35 +17,36 @@ io = io.StringIO()
 console = Console(file=io)
 logger = logging.getLogger("rich")
 
-# TODO: This needs to be an enum:
 SOURCE_KEY = "source"
 SOURCE_VALUE = "tomodo"
-STANDALONE = "Standalone"
-REPLICA_SET = "Replica Set"
-SHARDED_CLUSTER = "Sharded Cluster"
-ATLAS_DEPLOYMENT = "Atlas Deployment"
-OPS_MANAGER = "Ops Manager"
-OPS_MANAGER_DEPLOYMENT_SERVER = "Ops Manager Deployment Server"
+
+class DeploymentType(Enum):
+    STANDALONE = "Standalone"
+    REPLICA_SET = "Replica Set"
+    SHARDED_CLUSTER = "Sharded Cluster"
+    ATLAS_DEPLOYMENT = "Atlas Deployment"
+    OPS_MANAGER = "Ops Manager"
+    OPS_MANAGER_DEPLOYMENT_SERVER = "Ops Manager Deployment Server"
 
 AnyDeployment = Union[
     Mongod, ReplicaSet, ShardedCluster, AtlasDeployment, OpsManagerInstance, OpsManagerDeploymentServerGroup
 ]
 
 
-def transform_deployment_type(depl: str) -> str:
+def transform_deployment_type(depl: str) -> DeploymentType:
     res = depl.replace(" ", "-").replace("_", "-").lower()
     if res == "standalone":
-        return STANDALONE
+        return DeploymentType.STANDALONE
     if res == "replica-set":
-        return REPLICA_SET
+        return DeploymentType.REPLICA_SET
     if res == "sharded-cluster":
-        return SHARDED_CLUSTER
+        return DeploymentType.SHARDED_CLUSTER
     if res == "atlas-deployment":
-        return ATLAS_DEPLOYMENT
+        return DeploymentType.ATLAS_DEPLOYMENT
     if res == "ops-manager":
-        return OPS_MANAGER
+        return DeploymentType.OPS_MANAGER
     if res == "ops-manager-deployment-server":
-        return OPS_MANAGER_DEPLOYMENT_SERVER
+        return DeploymentType.OPS_MANAGER_DEPLOYMENT_SERVER
     raise InvalidDeploymentType
 
 
@@ -64,17 +66,17 @@ def marshal_deployment(components: List[Dict]) -> AnyDeployment:
     if len(components) == 0:
         raise DeploymentNotFound()
     deployment_type = transform_deployment_type(components[0].get("tomodo-type"))
-    if deployment_type == "Replica Set":
+    if deployment_type == DeploymentType.REPLICA_SET:
         return ReplicaSet.from_container_details(details=components)
-    elif deployment_type == "Sharded Cluster":
+    elif deployment_type == DeploymentType.SHARDED_CLUSTER:
         return ShardedCluster.from_container_details(details=components)
-    elif deployment_type == ATLAS_DEPLOYMENT:
+    elif deployment_type == DeploymentType.ATLAS_DEPLOYMENT:
         return AtlasDeployment.from_container_details(details=components[0])
-    elif deployment_type == "Standalone":
+    elif deployment_type == DeploymentType.STANDALONE:
         return Mongod.from_container_details(details=components[0])
-    elif deployment_type == "Ops Manager":
+    elif deployment_type == DeploymentType.OPS_MANAGER:
         return OpsManagerInstance.from_container_details(details=components[0])
-    elif deployment_type == "Ops Manager Deployment Server":
+    elif deployment_type == DeploymentType.OPS_MANAGER_DEPLOYMENT_SERVER:
         return OpsManagerDeploymentServerGroup.from_container_details(details=components[0])
 
 
@@ -91,7 +93,7 @@ def _read_mongo_version_from_container(container: Container, var_name: str = "MO
 def extract_details_from_containers(containers) -> List[Dict]:
     container_details = []
     for container in containers:
-        if container.labels.get("tomodo-type") == ATLAS_DEPLOYMENT:
+        if container.labels.get("tomodo-type") == DeploymentType.ATLAS_DEPLOYMENT.value:
             mongo_version = container.labels.get("version")
         elif container.labels.get("tomodo-type") == "ops-manager":
             mongo_version = _read_mongo_version_from_container(container, "VERSION")
