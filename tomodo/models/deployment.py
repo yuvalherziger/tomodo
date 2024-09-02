@@ -1,17 +1,25 @@
+import base64
 import logging
+import os
+import platform
+import secrets
 from abc import ABC, abstractmethod
-from enum import Enum, member
-from typing import List, Dict
+from enum import Enum
+from typing import List, Dict, Union
 
 import docker
 from docker import DockerClient
+from docker.errors import APIError
 from docker.models.networks import Network
 from docker.models.containers import Container
+from docker.types import Mount, NetworkingConfig, EndpointConfig
 
-from tomodo.common.errors import InvalidDeploymentType
+from tomodo.common.config import ProvisionerConfig
+from tomodo.common.errors import InvalidDeploymentType, PortsTakenException
+from tomodo.common.util import is_port_range_available, run_mongo_shell_command, with_retry
 
 logger = logging.getLogger("rich")
-
+DOCKER_ENDPOINT_CONFIG_VER = "1.43"
 
 class Status(Enum):
     STAGED = 0
@@ -22,12 +30,23 @@ class Status(Enum):
     PAUSED = 50
     EXITED = 60
     DEAD = 70
+    RUNNING_PARTIALLY = 80
+    UNKNOWN = 90
 
     @staticmethod
-    def from_container(container: Container) -> "Status":
+    def from_container(container: Union[Container, None]) -> "Status":
         if not container:
             return Status.STAGED
         return Status[str(container.status).upper()]
+
+    @staticmethod
+    def from_group(statuses: List["Status"]) -> "Status":
+        same = all(x == statuses[0] for x in statuses) if statuses else True
+        if same:
+            return statuses[0] if statuses else None
+        if Status.RUNNING in statuses:
+            return Status.RUNNING_PARTIALLY
+        return Status.UNKNOWN
 
 
 def _network_name_from_container(container: Container) -> str:
@@ -36,6 +55,135 @@ def _network_name_from_container(container: Container) -> str:
     if len(network_names) == 0:
         raise ValueError("The container has no networks")
     return network_names[0]
+
+
+def create_mongod_container(image: str, port: int, name: str, network: Network, group_name: str, replset_name: str = None,
+                            config_svr: bool = False, replica_set: bool = False, sharded: bool = False,
+                            shard_id: int = 0, arbiter: bool = False, ephemeral: bool = False, username: str = None,
+                            password: str = None, shards: int = 0) -> Container:
+    logger.info("Creating container from '%s'. Port %d will be exposed to your host", image, port)
+    host_path = ""
+    container_path = ""
+    mounts = []
+    command = [
+        "mongod",
+        "--bind_ip_all",
+        "--port", str(port),
+    ]
+    home_dir = os.path.expanduser("~")
+    if not ephemeral:
+        data_dir_name = f".tomodo/data/{name}-db"
+        data_dir_path = os.path.join(home_dir, data_dir_name)
+        os.makedirs(data_dir_path, exist_ok=True)
+        host_path = os.path.abspath(data_dir_path)
+        container_path = "/data/db"
+        mounts = [Mount(
+            target=container_path, source=host_path, type="bind", read_only=False
+        )]
+        command.extend(["--dbpath", container_path, "--logpath", f"{container_path}/mongod.log"])
+
+    environment = []
+    target_keyfile_path = "/etc/mongo/mongo_keyfile" if get_os() == "macOS" else "/data/db/mongo_keyfile"
+    if username and password and not sharded:
+        environment = [f"MONGO_INITDB_ROOT_USERNAME={username}",
+                        f"MONGO_INITDB_ROOT_PASSWORD={password}"]
+
+        keyfile_path = os.path.abspath(os.path.join(home_dir, ".tomodo/mongo_keyfile"))
+
+        if not os.path.isfile(keyfile_path):
+            random_bytes = secrets.token_bytes(756)
+            base64_bytes = base64.b64encode(random_bytes)
+            with open(keyfile_path, "wb") as file:
+                file.write(base64_bytes)
+            os.chmod(keyfile_path, 0o400)
+        mounts.append(
+            Mount(target=target_keyfile_path, source=keyfile_path, type="bind")
+        )
+        command.extend(["--keyFile", target_keyfile_path])
+    deployment_type = "Standalone"
+    if config_svr:
+        command.extend(["--configsvr", "--replSet", replset_name])
+        deployment_type = "Sharded Cluster"
+    elif replica_set:
+        command.extend(["--replSet", replset_name])
+        deployment_type = "Replica Set"
+    elif sharded:
+        command.extend(["--shardsvr", "--replSet", replset_name])
+        deployment_type = "Sharded Cluster"
+
+    labels = {
+        "source": "tomodo",
+        "tomodo-name": name,
+        "tomodo-group": group_name,
+        "tomodo-port": str(port),
+        "tomodo-role": "cfg-svr" if config_svr else "rs-member" if replset_name else "standalone",
+        "tomodo-type": deployment_type,
+        "tomodo-data-dir": host_path,
+        "tomodo-container-data-dir": container_path,
+        "tomodo-shard-id": str(shard_id),
+        "tomodo-shard-count": str(shards or 0),
+        "tomodo-arbiter": str(int(arbiter)),
+        "tomodo-ephemeral": str(int(ephemeral))
+    }
+
+    container = _create_docker_container(
+        name=name, image=image, labels=labels, mounts=mounts,
+        environment=environment, port=port, command=command,
+        network=network
+    )
+
+    return container, host_path, container_path
+
+
+def wait_for_readiness(mongod: "Mongod", config: ProvisionerConfig):
+    logger.debug("Checking the readiness of %s", mongod.name)
+    mongo_cmd = "db.runCommand({ping: 1}).ok"
+
+    try:
+        exit_code, output, _ = run_mongo_shell_command(mongo_cmd=mongo_cmd, mongod=mongod, config=config)
+        is_ready = int(output) == 1
+    except Exception as e:
+        logger.debug(str(e))
+        is_ready = False
+    if not is_ready:
+        logger.info("Server %s is not ready to accept connections", mongod.name)
+        raise Exception("Server isn't ready")
+    logger.info("Server %s is ready to accept connections", mongod.name)
+
+
+def _create_docker_container(name: str, image: str, labels: Dict, mounts: List[Mount], environment: List[str],
+                             port: int, command: List[str], network: Network) -> Container:
+    networking_config = NetworkingConfig(
+        endpoints_config={
+            network.name: EndpointConfig(version=DOCKER_ENDPOINT_CONFIG_VER, aliases=[name])
+        }
+    )
+    return docker.from_env().containers.run(
+        image,
+        detach=True,
+        ports={f"{port}/tcp": port},
+        platform=f"linux/{platform.machine()}",
+        network=network.id,
+        hostname=name,
+        name=name,
+        command=command,
+        mounts=mounts,
+        networking_config=networking_config,
+        environment=environment,
+        labels=labels
+    )
+
+
+def get_network(name: str = None) -> Network:
+    networks = docker.from_env().networks.list(filters={"name": name})
+    if len(networks) > 0:
+        network = networks[0]
+        logger.info("At least one Docker network exists with the name '%s'. Picking the first one [id: %s]",
+                    network.name, network.short_id)
+    else:
+        network = docker.from_env().networks.create(name=name)
+        logger.info("Docker network '%s' was created [id: %s]", name, network.short_id)
+    return network
 
 
 class Deployment(ABC):
@@ -144,6 +292,8 @@ class Mongod(Deployment):
     container_data_dir: str
     is_arbiter: bool = False
     is_ephemeral: bool = False
+    username: str = None
+    password: str = None
 
     def __init__(self, version: str = None, network_name: str = None,
                  port: int = 27017, name: str = None, group_name: str = None, container: Container = None,
@@ -179,7 +329,8 @@ class Mongod(Deployment):
             is_arbiter=labels.get("tomodo-arbiter") == "1",
             status=Status.from_container(container),
             version=version,
-            image=container.image.tags[0]  # Should never be empty
+            image=container.image.tags[0],  # Should never be empty
+            network_name=_network_name_from_container(container)
         )
 
     @property
@@ -187,8 +338,26 @@ class Mongod(Deployment):
         return "standalone"
 
     def create(self):
-        pass
+        if not is_port_range_available((self.port,)):
+            raise PortsTakenException
+        container, host_data_dir, container_data_dir = create_mongod_container(
+            image=self.image,
+            port=self.port,
+            name=self.name,
+            network=get_network(self.network_name),
+            group_name=self.name,
+            ephemeral=self.is_ephemeral,
+            username=self.username,
+            password=self.password
+        )
+        self.container_data_dir = container_data_dir
+        self.host_data_dir = host_data_dir
+        self.container = container
 
+    @with_retry(max_attempts=60, delay=2, retryable_exc=(APIError, Exception))
+    def wait_for_mongod_readiness(self):
+        wait_for_readiness(mongod=self, config=self.config)
+    
     def __str__(self) -> str:
         return ""
 
@@ -203,8 +372,8 @@ class ReplicaSet(Deployment):
 
     def __init__(self, version: str = None,
                  port: int = 27017, name: str = None, group_name: str = None,
-                 members: List[Mongod] = None):
-        super().__init__(version)
+                 members: List[Mongod] = None, status: Status = Status.STAGED):
+        super().__init__(version=version, status=status)
         self.port = port
         self.name = name
         self.group_name = group_name
@@ -219,7 +388,9 @@ class ReplicaSet(Deployment):
             members.append(Mongod.from_container(container))
         return ReplicaSet(
             members=members,
-            port=members[0].port
+            port=first_container.port,
+            version=first_container.version,
+            status=Status.from_group([m.status for m in members])
         )
 
     @property
