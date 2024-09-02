@@ -1,11 +1,7 @@
-import base64
 import logging
-import os
 import platform
-import secrets
 from typing import List, Union
 
-import docker
 from docker import DockerClient
 from docker.errors import APIError
 from docker.models.containers import Container
@@ -15,13 +11,13 @@ from pymongo import MongoClient
 from rich.console import Console
 from rich.markdown import Markdown
 
+from tomodo.common.base_provisioner import ProvisionerMixin
 from tomodo.common.config import ProvisionerConfig
 from tomodo.common.errors import (
     InvalidConfiguration,
     PortsTakenException,
     DeploymentNotFound,
-    DeploymentNameCollision,
-    MongoDBImageNotFound
+    DeploymentNameCollision
 )
 from tomodo.common.models import Mongod, ReplicaSet, ShardedCluster, Mongos, Shard, ConfigServer, Deployment, \
     AtlasDeployment
@@ -35,29 +31,14 @@ console = Console()
 logger = logging.getLogger("rich")
 
 
-class Provisioner:
+class Provisioner(ProvisionerMixin):
     network: Network = None
     config: ProvisionerConfig = None
     docker_client: DockerClient = None
 
     def __init__(self, config: ProvisionerConfig):
+        super().__init__()
         self.config = config
-        self.docker_client = docker.from_env()
-
-    def check_and_pull_image(self, image_name: str):
-        try:
-            self.docker_client.images.get(image_name)
-            logger.info("Image '%s' was found locally", image_name)
-        except docker.errors.ImageNotFound:
-            # If not found, pull the image
-            try:
-                logger.info("Pulling image '%s' from registry", image_name)
-                self.docker_client.images.pull(image_name)
-                logger.info("Pulled image '%s' successfully", image_name)
-            except docker.errors.NotFound:
-                raise MongoDBImageNotFound(image=image_name)
-        except Exception:
-            raise
 
     def provision(self, deployment_getter: callable, print_summary: bool = True) -> Union[
         Mongod, ReplicaSet, ShardedCluster, AtlasDeployment]:
@@ -74,7 +55,7 @@ class Provisioner:
         except DeploymentNotFound:
             pass
         self.check_and_pull_image(f"{self.config.image_repo}:{self.config.image_tag}")
-        self.network = self.get_network()
+        self.network = self.get_network(config=self.config)
         deployment: Deployment = Deployment()
         if self.config.standalone:
             deployment: Mongod = Mongod(
@@ -286,8 +267,14 @@ tomodo describe --name {self.config.name}
         # Provision nodes:
         for member in replicaset.members:
             container, host_data_dir, container_data_dir = self.create_mongod_container(
+                image=f"{self.config.image_repo}:{self.config.image_tag}",
                 port=member.port,
+                replica_set=True,
                 name=member.name,
+                ephemeral=self.config.ephemeral,
+                username=self.config.username,
+                password=self.config.password,
+                network=self.network,
                 replset_name=replicaset.name,
                 config_svr=config_svr,
                 shard_id=shard_id,
@@ -308,8 +295,13 @@ tomodo describe --name {self.config.name}
         if not is_port_range_available((mongod.port,)):
             raise PortsTakenException
         container, host_data_dir, container_data_dir = self.create_mongod_container(
+            image=f"{self.config.image_repo}:{self.config.image_tag}",
             port=mongod.port,
-            name=mongod.name
+            name=mongod.name,
+            network=self.network,
+            username=self.config.username,
+            password=self.config.password,
+            ephemeral=self.config.ephemeral
         )
         mongod.container = container
         mongod.container_id = container.short_id
@@ -339,24 +331,9 @@ tomodo describe --name {self.config.name}
         for script in init_scripts:
             run_mongo_shell_command(mongo_cmd=script, mongod=first_mongod, config=self.config)
 
-    def wait_for_readiness(self, mongod: Mongod):
-        logger.debug("Checking the readiness of %s", mongod.name)
-        mongo_cmd = "db.runCommand({ping: 1}).ok"
-
-        try:
-            exit_code, output, _ = run_mongo_shell_command(mongo_cmd=mongo_cmd, mongod=mongod, config=self.config)
-            is_ready = int(output) == 1
-        except Exception as e:
-            logger.debug(str(e))
-            is_ready = False
-        if not is_ready:
-            logger.info("Server %s is not ready to accept connections", mongod.name)
-            raise Exception("Server isn't ready")
-        logger.info("Server %s is ready to accept connections", mongod.name)
-
     @with_retry(max_attempts=60, delay=2, retryable_exc=(APIError, Exception))
     def wait_for_mongod_readiness(self, mongod: Mongod):
-        self.wait_for_readiness(mongod)
+        self.wait_for_readiness(mongod, config=self.config)
 
     @with_retry(max_attempts=10, delay=10, retryable_exc=(APIError, Exception))
     def wait_for_atlas_deployment_readiness(self, depl: AtlasDeployment):
@@ -455,104 +432,3 @@ tomodo describe --name {self.config.name}
                 "tomodo-shard-count": str(self.config.shards or 0),
             }
         )
-
-    def create_mongod_container(self, port: int, name: str, replset_name: str = None,
-                                config_svr: bool = False, sh_cluster: bool = False, shard_id: int = 0,
-                                arbiter: bool = False) -> Container:
-        repo = self.config.image_repo
-        tag = self.config.image_tag
-        image = f"{repo}:{tag}"
-        logger.info("Creating container from '%s'. Port %d will be exposed to your host", image, port)
-        host_path = ""
-        container_path = ""
-        mounts = []
-        command = [
-            "mongod",
-            "--bind_ip_all",
-            "--port", str(port),
-        ]
-        home_dir = os.path.expanduser("~")
-        if not self.config.ephemeral:
-            data_dir_name = f".tomodo/data/{name}-db"
-            data_dir_path = os.path.join(home_dir, data_dir_name)
-            os.makedirs(data_dir_path, exist_ok=True)
-            host_path = os.path.abspath(data_dir_path)
-            container_path = "/data/db"
-            mounts = [Mount(
-                target=container_path, source=host_path, type="bind", read_only=False
-            )]
-            command.extend(["--dbpath", container_path, "--logpath", f"{container_path}/mongod.log"])
-
-        environment = []
-        target_keyfile_path = "/etc/mongo/mongo_keyfile" if get_os() == "macOS" else "/data/db/mongo_keyfile"
-        if self.config.username and self.config.password and not self.config.sharded:
-            environment = [f"MONGO_INITDB_ROOT_USERNAME={self.config.username}",
-                           f"MONGO_INITDB_ROOT_PASSWORD={self.config.password}"]
-
-            keyfile_path = os.path.abspath(os.path.join(home_dir, ".tomodo/mongo_keyfile"))
-
-            if not os.path.isfile(keyfile_path):
-                random_bytes = secrets.token_bytes(756)
-                base64_bytes = base64.b64encode(random_bytes)
-                with open(keyfile_path, "wb") as file:
-                    file.write(base64_bytes)
-                os.chmod(keyfile_path, 0o400)
-            mounts.append(
-                Mount(target=target_keyfile_path, source=keyfile_path, type="bind")
-            )
-            command.extend(["--keyFile", target_keyfile_path])
-        deployment_type = "Standalone"
-        if config_svr:
-            command.extend(["--configsvr", "--replSet", replset_name])
-            deployment_type = "Sharded Cluster"
-        elif self.config.replica_set:
-            command.extend(["--replSet", replset_name])
-            deployment_type = "Replica Set"
-        elif self.config.sharded:
-            command.extend(["--shardsvr", "--replSet", replset_name])
-            deployment_type = "Sharded Cluster"
-        networking_config = NetworkingConfig(
-            endpoints_config={
-                self.network.name: EndpointConfig(version=DOCKER_ENDPOINT_CONFIG_VER, aliases=[name])
-            }
-        )
-
-        return self.docker_client.containers.run(
-            f"{repo}:{tag}",
-            detach=True,
-            ports={f"{port}/tcp": port},
-            platform=f"linux/{platform.machine()}",
-            network=self.network.id,
-            hostname=name,
-            name=name,
-            command=command,
-            mounts=mounts,
-            networking_config=networking_config,
-            environment=environment,
-            labels={
-                "source": "tomodo",
-                "tomodo-name": name,
-                "tomodo-group": self.config.name,
-                "tomodo-port": str(port),
-                "tomodo-role": "cfg-svr" if config_svr else "rs-member" if replset_name else "standalone",
-                "tomodo-type": deployment_type,
-                "tomodo-data-dir": host_path,
-                "tomodo-container-data-dir": container_path,
-                "tomodo-shard-id": str(shard_id),
-                "tomodo-shard-count": str(self.config.shards or 0),
-                "tomodo-arbiter": str(int(arbiter)),
-                "tomodo-ephemeral": str(int(self.config.ephemeral))
-            }
-        ), host_path, container_path
-
-    def get_network(self, name: str = None) -> Network:
-        name = name or self.config.network_name
-        networks = self.docker_client.networks.list(filters={"name": name})
-        if len(networks) > 0:
-            network = networks[0]
-            logger.info("At least one Docker network exists with the name '%s'. Picking the first one [id: %s]",
-                        network.name, network.short_id)
-        else:
-            network = self.docker_client.networks.create(name=name)
-            logger.info("Docker network '%s' was created [id: %s]", name, network.short_id)
-        return network

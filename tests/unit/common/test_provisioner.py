@@ -77,10 +77,11 @@ class TestProvisioner:
 
     @staticmethod
     def test_get_network_found(caplog: LogCaptureFixture, provisioner_client, docker_network: Network):
-        provisioner = Provisioner(config=ProvisionerConfig(network_name=docker_network.name))
+        cfg = ProvisionerConfig(network_name=docker_network.name)
+        provisioner = Provisioner(config=cfg)
         provisioner_client.networks.list.return_value = [docker_network]
         with caplog.at_level(logging.INFO):
-            network = provisioner.get_network()
+            network = provisioner.get_network(config=cfg)
         assert docker_network.name == network.name, "Unexpected network name value"
         assert docker_network.short_id == network.short_id, "Unexpected network short_id value"
         assert f"At least one Docker network exists with the name '{docker_network.name}'. " \
@@ -88,11 +89,12 @@ class TestProvisioner:
 
     @staticmethod
     def test_get_network_not_found_and_created(caplog: LogCaptureFixture, provisioner_client, docker_network: Network):
-        provisioner = Provisioner(config=ProvisionerConfig(network_name=docker_network.name))
+        cfg = ProvisionerConfig(network_name=docker_network.name)
+        provisioner = Provisioner(config=cfg)
         provisioner_client.networks.list.return_value = []
         provisioner_client.networks.create.return_value = docker_network
         with caplog.at_level(logging.INFO):
-            network = provisioner.get_network()
+            network = provisioner.get_network(config=cfg)
         assert docker_network.name == network.name, "Unexpected network name value"
         assert docker_network.short_id == network.short_id, "Unexpected network short_id value"
         assert f"Docker network '{docker_network.name}' " \
@@ -572,7 +574,7 @@ class TestProvisioner:
         assert isinstance(deployment, ReplicaSet)
 
     @staticmethod
-    @patch("tomodo.common.provisioner.run_mongo_shell_command")
+    @patch("tomodo.common.base_provisioner.run_mongo_shell_command")
     def test_wait_for_mongod_readiness_ready(run_mongo_shell_command_patch: MagicMock,
                                              mongod: Mongod,
                                              caplog: LogCaptureFixture):
@@ -584,7 +586,7 @@ class TestProvisioner:
         assert f"Server {mongod.name} is ready to accept connections" in caplog.text
 
     @staticmethod
-    @patch("tomodo.common.provisioner.run_mongo_shell_command")
+    @patch("tomodo.common.base_provisioner.run_mongo_shell_command")
     def test_wait_for_mongod_readiness_eventually_ready(run_mongo_shell_command_patch: MagicMock,
                                                         mongod: Mongod,
                                                         caplog: LogCaptureFixture):
