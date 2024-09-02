@@ -1,4 +1,5 @@
 import base64
+import inspect
 import logging
 import os
 import platform
@@ -14,12 +15,12 @@ from docker.models.networks import Network
 from docker.models.containers import Container
 from docker.types import Mount, NetworkingConfig, EndpointConfig
 
-from tomodo.common.config import ProvisionerConfig
-from tomodo.common.errors import InvalidDeploymentType, PortsTakenException
-from tomodo.common.util import get_os, is_port_range_available, run_mongo_shell_command, with_retry
+from tomodo.common.errors import InvalidDeploymentType, PortsTakenException, InvalidShellException
+from tomodo.common.util import get_os, is_port_range_available, with_retry, clean_up_mongo_output
 
 logger = logging.getLogger("rich")
 DOCKER_ENDPOINT_CONFIG_VER = "1.43"
+
 
 class Status(Enum):
     STAGED = 0
@@ -57,7 +58,8 @@ def _network_name_from_container(container: Container) -> str:
     return network_names[0]
 
 
-def create_mongod_container(image: str, port: int, name: str, network: Network, group_name: str, replset_name: str = None,
+def create_mongod_container(image: str, port: int, name: str, network: Network, group_name: str,
+                            replset_name: str = None,
                             config_svr: bool = False, replica_set: bool = False, sharded: bool = False,
                             shard_id: int = 0, arbiter: bool = False, ephemeral: bool = False, username: str = None,
                             password: str = None, shards: int = 0) -> Container:
@@ -86,7 +88,7 @@ def create_mongod_container(image: str, port: int, name: str, network: Network, 
     target_keyfile_path = "/etc/mongo/mongo_keyfile" if get_os() == "macOS" else "/data/db/mongo_keyfile"
     if username and password and not sharded:
         environment = [f"MONGO_INITDB_ROOT_USERNAME={username}",
-                        f"MONGO_INITDB_ROOT_PASSWORD={password}"]
+                       f"MONGO_INITDB_ROOT_PASSWORD={password}"]
 
         keyfile_path = os.path.abspath(os.path.join(home_dir, ".tomodo/mongo_keyfile"))
 
@@ -135,12 +137,12 @@ def create_mongod_container(image: str, port: int, name: str, network: Network, 
     return container, host_path, container_path
 
 
-def wait_for_readiness(mongod: "Mongod", config: ProvisionerConfig):
+def wait_for_readiness(mongod: "Mongod"):
     logger.debug("Checking the readiness of %s", mongod.name)
     mongo_cmd = "db.runCommand({ping: 1}).ok"
 
     try:
-        exit_code, output, _ = run_mongo_shell_command(mongo_cmd=mongo_cmd, mongod=mongod, config=config)
+        exit_code, output, _ = run_shell_command(mongo_cmd=mongo_cmd, mongod=mongod)
         is_ready = int(output) == 1
     except Exception as e:
         logger.debug(str(e))
@@ -184,6 +186,43 @@ def get_network(name: str = None) -> Network:
         network = docker.from_env().networks.create(name=name)
         logger.info("Docker network '%s' was created [id: %s]", name, network.short_id)
     return network
+
+
+def run_shell_command(mongo_cmd: str, mongod: "Mongod", shell: str = "mongosh",
+                      serialize_json: bool = False) -> (int, str, str):
+    docker_client = docker.from_env()
+    container: Container = docker_client.containers.get(mongod.container.short_id)
+    if not container:
+        raise Exception(f"Could not find the container '{mongod.container.short_id}'")
+    hostname = mongod.name
+
+    shell_check_exit_code, _ = container.exec_run(cmd=["which", shell])
+    if shell_check_exit_code != 0:
+        if shell != "mongo":
+            logger.debug(
+                "The '%s' shell could not be found in the container. Checking for the legacy 'mongo' shell",
+                shell)
+            shell = "mongo"
+            shell_check_exit_code, _ = container.exec_run(cmd=["which", shell])
+        if shell_check_exit_code != 0:
+            logger.error("The '%s' shell could not be found in the container.", shell)
+            # No valid shell --> error out:
+            raise InvalidShellException
+    # If the output needs to be JSON-serialized by the tool, it's required to stringify it with mongosh:
+    if shell == "mongosh" and serialize_json:
+        mongo_cmd = f"JSON.stringify({mongo_cmd})"
+    cmd = [shell, "--host", hostname, "--quiet", "--norc", "--port", str(mongod.port), "--eval", mongo_cmd]
+
+    if mongod.is_auth_enabled and not isinstance(mongod, ConfigServer) and not isinstance(mongod, Mongos):
+        cmd.extend(["--username", mongod.username])
+        cmd.extend(["--password", mongod.password])
+    command_exit_code: int
+    command_output: bytes
+    command_exit_code, command_output = container.exec_run(cmd=cmd)
+    caller = inspect.stack()[1][3]
+    logger.debug("Docker-exec [%s]: command output: %s", caller, command_output.decode("utf-8").strip())
+    logger.debug("Docker-exec [%s]: command exit code: %d", caller, command_exit_code)
+    return command_exit_code, clean_up_mongo_output(command_output.decode("utf-8").strip()), mongod.container.short_id
 
 
 class Deployment(ABC):
@@ -295,11 +334,11 @@ class Mongod(Deployment):
     username: str = None
     password: str = None
 
-    def __init__(self, version: str = None, network_name: str = None,
+    def __init__(self, version: str = None, network_name: str = "mongo_network",
                  port: int = 27017, name: str = None, group_name: str = None, container: Container = None,
                  host_data_dir: str = None, container_data_dir: str = None,
                  is_arbiter: bool = False, is_ephemeral: bool = False, status: Status = Status.STAGED,
-                 image: str = "mongo:latest"):
+                 image: str = "mongo:latest", username: str = None, password: str = None):
         super().__init__(version=version, name=name, port=port, network_name=network_name, group_name=group_name,
                          status=status, image=image)
         self.container = container
@@ -307,7 +346,12 @@ class Mongod(Deployment):
         self.container_data_dir = container_data_dir
         self.is_arbiter = is_arbiter
         self.is_ephemeral = is_ephemeral
+        self.username = username
+        self.password = password
 
+    @property
+    def is_auth_enabled(self) -> bool:
+        return self.username is not None and self.password is not None
 
     @staticmethod
     def from_container(container: Container) -> "Mongod":
@@ -345,10 +389,11 @@ class Mongod(Deployment):
             port=self.port,
             name=self.name,
             network=get_network(self.network_name),
-            group_name=self.name,
+            group_name=self.group_name,
             ephemeral=self.is_ephemeral,
             username=self.username,
-            password=self.password
+            password=self.password,
+            arbiter=self.is_arbiter
         )
         self.container_data_dir = container_data_dir
         self.host_data_dir = host_data_dir
@@ -360,15 +405,15 @@ class Mongod(Deployment):
 
     @with_retry(max_attempts=60, delay=2, retryable_exc=(APIError, Exception))
     def wait_for_mongod_readiness(self):
-        wait_for_readiness(mongod=self, config=self.config)
-    
+        wait_for_readiness(mongod=self)
+
     def __str__(self) -> str:
         """
-        :return: A markdown table row representing the instance
+        :return: A Markdown table row representing the instance
         """
         data = [self.name, "Standalone", self.status.value, "1", self.version, str(self.port)]
         return f"|{'|'.join(data)}|"
-    
+
     def __dict__(self) -> Dict:
         return {}
 
@@ -377,34 +422,43 @@ class Standalone(Mongod):
     pass
 
 
+class Mongos(Mongod):
+    pass
+
+
 class ReplicaSet(Deployment):
     members: List[Mongod]
     size: int
     has_arbiter: bool = False
     size: int = None
+    username: str = None
+    password: str = None
 
     def __init__(self, version: str = None,
                  port: int = 27017, name: str = None, group_name: str = None,
                  members: List[Mongod] = None, status: Status = Status.STAGED,
-                 has_arbiter: bool = False, size: int = None):
-        super().__init__(version=version, status=status)
+                 has_arbiter: bool = False, size: int = None, image: str = "mongo:latest",
+                 network_name: str = "mongo_network", username: str = None, password: str = None):
+        super().__init__(name=name, version=version, status=status,
+                         network_name=network_name, image=image)
         self.port = port
         self.name = name
-        self.group_name = group_name
-        self.members = members
+        self.group_name = group_name or name
+        self.members = members or []
         self.size = size or len(self.members)
         self.has_arbiter = has_arbiter
+        self.username = username
+        self.password = password
 
     @staticmethod
     def from_container_group(containers: List[Container]) -> "ReplicaSet":
-        first_container = containers[0]
-        members = []
+        members: List[Mongod] = []
         for container in containers:
             members.append(Mongod.from_container(container))
         return ReplicaSet(
             members=members,
-            port=first_container.port,
-            version=first_container.version,
+            port=members[0].port,
+            version=members[0].version,
             status=Status.from_group([m.status for m in members])
         )
 
@@ -413,32 +467,59 @@ class ReplicaSet(Deployment):
         return "replica-set"
 
     def create(self):
-        if not is_port_range_available((self.port,)):
+        start_port = self.port
+        ports = range(start_port, start_port + self.size)
+        if not is_port_range_available(tuple(ports)):
             raise PortsTakenException
         if self.has_arbiter:
             logger.info("An arbiter node will also be provisioned")
-        start_port = self.port
-        ports = range(start_port, start_port + self.size)
-        container, host_data_dir, container_data_dir = create_mongod_container(
-            image=self.image,
-            port=self.port,
-            name=self.name,
-            network=get_network(self.network_name),
-            group_name=self.name,
-            ephemeral=self.is_ephemeral,
-            username=self.username,
-            password=self.password
-        )
-        self.container_data_dir = container_data_dir
-        self.host_data_dir = host_data_dir
-        self.container = container
-        logger.info("MongoDB container created [id: %s]", self.container.short_id)
-        logger.info("Checking the readiness of %s", self.name)
-        self.wait_for_mongod_readiness()
+        members: List[Mongod] = []
+        for port in ports:
+            idx = port - start_port + 1  # TODO: change to [0..N-1]
+            members.append(
+                Mongod(
+                    name=f"{self.name}-{idx}",
+                    port=port,
+                    group_name=self.group_name,
+                    is_arbiter=self.has_arbiter and idx == len(list(ports)),
+                    network_name=self.network_name,
+                    image=self.image
+                )
+            )
+        for member in members:
+            self.members.append(member.create())
+        self.initialize()
         return self
+
+    def initialize(self) -> None:
+        init_scripts: List[str] = ["rs.initiate()"]
+        if self.has_arbiter:
+            rc = self.size // 2
+            init_scripts.append(
+                "db.adminCommand({ setDefaultRWConcern: 1, defaultWriteConcern: { 'w': %s } })" % str(rc)
+            )
+        for m in self.members[1:self.size]:
+            # TODO: is this even needed?
+            # logger.info("Checking the readiness of %s", m.name)
+
+            # self.wait_for_mongod_readiness(mongod=m)
+            if m.is_arbiter:
+                init_scripts.append(f"rs.addArb('{m.name}:{m.port}')")
+            else:
+                init_scripts.append(f"rs.add('{m.name}:{m.port}')")
+
+        first_mongod = self.members[0]
+        for script in init_scripts:
+            # TODO: this can probably become a single initialization command
+            run_shell_command(mongo_cmd=script, mongod=first_mongod)
 
     def __str__(self) -> str:
         return ""
+
+
+class ConfigServer(Mongod):
+    pass
+
 
 class ShardedCluster(Deployment):
 
@@ -473,6 +554,7 @@ class Atlas(Deployment):
     def __str__(self) -> str:
         return ""
 
+
 class OpsManager(Deployment):
 
     @staticmethod
@@ -505,3 +587,10 @@ class OpsManagerDeploymentServer(Deployment):
 
     def __str__(self) -> str:
         return ""
+
+
+if __name__ == "__main__":
+    # mongod = Standalone(name="my-mongo", port=27017, network_name="my-network")
+    # mongod.create()
+    rs = ReplicaSet(name="jahr", port=2000, size=5, username="admin", password="passw0rd")
+    rs.create()
