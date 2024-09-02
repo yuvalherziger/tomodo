@@ -16,7 +16,7 @@ from docker.types import Mount, NetworkingConfig, EndpointConfig
 
 from tomodo.common.config import ProvisionerConfig
 from tomodo.common.errors import InvalidDeploymentType, PortsTakenException
-from tomodo.common.util import is_port_range_available, run_mongo_shell_command, with_retry
+from tomodo.common.util import get_os, is_port_range_available, run_mongo_shell_command, with_retry
 
 logger = logging.getLogger("rich")
 DOCKER_ENDPOINT_CONFIG_VER = "1.43"
@@ -337,7 +337,7 @@ class Mongod(Deployment):
     def type_str(self) -> str:
         return "standalone"
 
-    def create(self):
+    def create(self) -> "Mongod":
         if not is_port_range_available((self.port,)):
             raise PortsTakenException
         container, host_data_dir, container_data_dir = create_mongod_container(
@@ -353,13 +353,24 @@ class Mongod(Deployment):
         self.container_data_dir = container_data_dir
         self.host_data_dir = host_data_dir
         self.container = container
+        logger.info("MongoDB container created [id: %s]", self.container.short_id)
+        logger.info("Checking the readiness of %s", self.name)
+        self.wait_for_mongod_readiness()
+        return self
 
     @with_retry(max_attempts=60, delay=2, retryable_exc=(APIError, Exception))
     def wait_for_mongod_readiness(self):
         wait_for_readiness(mongod=self, config=self.config)
     
     def __str__(self) -> str:
-        return ""
+        """
+        :return: A markdown table row representing the instance
+        """
+        data = [self.name, "Standalone", self.status.value, "1", self.version, str(self.port)]
+        return f"|{'|'.join(data)}|"
+    
+    def __dict__(self) -> Dict:
+        return {}
 
 
 class Standalone(Mongod):
@@ -369,16 +380,20 @@ class Standalone(Mongod):
 class ReplicaSet(Deployment):
     members: List[Mongod]
     size: int
+    has_arbiter: bool = False
+    size: int = None
 
     def __init__(self, version: str = None,
                  port: int = 27017, name: str = None, group_name: str = None,
-                 members: List[Mongod] = None, status: Status = Status.STAGED):
+                 members: List[Mongod] = None, status: Status = Status.STAGED,
+                 has_arbiter: bool = False, size: int = None):
         super().__init__(version=version, status=status)
         self.port = port
         self.name = name
         self.group_name = group_name
         self.members = members
-        self.size = len(self.members)
+        self.size = size or len(self.members)
+        self.has_arbiter = has_arbiter
 
     @staticmethod
     def from_container_group(containers: List[Container]) -> "ReplicaSet":
@@ -398,7 +413,29 @@ class ReplicaSet(Deployment):
         return "replica-set"
 
     def create(self):
-        pass
+        if not is_port_range_available((self.port,)):
+            raise PortsTakenException
+        if self.has_arbiter:
+            logger.info("An arbiter node will also be provisioned")
+        start_port = self.port
+        ports = range(start_port, start_port + self.size)
+        container, host_data_dir, container_data_dir = create_mongod_container(
+            image=self.image,
+            port=self.port,
+            name=self.name,
+            network=get_network(self.network_name),
+            group_name=self.name,
+            ephemeral=self.is_ephemeral,
+            username=self.username,
+            password=self.password
+        )
+        self.container_data_dir = container_data_dir
+        self.host_data_dir = host_data_dir
+        self.container = container
+        logger.info("MongoDB container created [id: %s]", self.container.short_id)
+        logger.info("Checking the readiness of %s", self.name)
+        self.wait_for_mongod_readiness()
+        return self
 
     def __str__(self) -> str:
         return ""
