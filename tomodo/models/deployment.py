@@ -472,7 +472,6 @@ class ReplicaSet(Deployment):
     members: List[Mongod]
     size: int
     has_arbiter: bool = False
-    size: int = None
     username: str = None
     password: str = None
     is_csrs: bool = False
@@ -564,11 +563,23 @@ class ConfigServer(Mongod):
 
 
 class Shard(ReplicaSet):
-    pass
+    shard_id: str
+    
+    def __init__(self, version: str, port: int, name: str, shard_id: str,
+                 group_name: str = None, status: Status = Status.STAGED, image: str = "mongo:latest",
+                 network_name: str = "mongo_network", shard_count: int = 2, size: int = 3):
+        super().__init__(name=name, version=version, status=status,
+                         network_name=network_name, image=image)
+        self.port = port
+        self.group_name = group_name or name
+        self.shard_count = shard_count
+        self.size = size
+        self.shard_id
 
 
 class ConfigServerReplicaSet(ReplicaSet):
-    
+    members: List[ConfigServer]
+
     @property
     def config_db(self) -> str:
         hosts = ",".join([f"{m.name}:{m.port}" for m in self.members])
@@ -576,8 +587,9 @@ class ConfigServerReplicaSet(ReplicaSet):
 
 
 class ShardedCluster(Deployment):
-    shards: int = 2
-    replicas: int = 3
+    shard_count: int = 2
+    shards: List[Shard]
+    shard_size: int = 3
     config_servers: int = 1
     mongos_count: int = 1
     mongos: List[Mongos]
@@ -588,7 +600,7 @@ class ShardedCluster(Deployment):
                  group_name: str = None, csrs: ConfigServerReplicaSet = None,
                  status: Status = Status.STAGED, image: str = "mongo:latest",
                  network_name: str = "mongo_network", mongos_count: int = 1,
-                 config_servers: int = 1, shards: int = 2, replicas: int = 3):
+                 config_servers: int = 1, shard_count: int = 2, shard_size: int = 3):
         super().__init__(name=name, version=version, status=status,
                          network_name=network_name, image=image)
         self.port = port
@@ -596,8 +608,8 @@ class ShardedCluster(Deployment):
         self.csrs = csrs
         self.mongos_count = mongos_count
         self.config_servers = config_servers
-        self.shards = shards
-        self.replicas = replicas
+        self.shard_count = shard_count
+        self.shard_size = shard_size
 
     @staticmethod
     def from_container(container: Container) -> "Deployment":
@@ -609,9 +621,9 @@ class ShardedCluster(Deployment):
 
     def create(self) -> "ShardedCluster":
         logger.info("This action will provision a MongoDB sharded cluster with %d shards (%d replicas each)",
-                    self.config.shards, self.config.replicas)
-        # (replicas x shards) + config server + mongos
-        num_ports = (self.shards * self.replicas) + self.config_servers + self.mongos_count
+                    self.config.shards, self.config.shard_size)
+        # (# replicas x # shards) + # config servers + # mongos
+        num_ports = (self.shards * self.shard_size) + self.config_servers + self.mongos_count
         ports = range(self.config.port, self.config.port + num_ports)
         if not is_port_range_available(tuple(ports)):
             raise PortsTakenException
@@ -624,6 +636,7 @@ class ShardedCluster(Deployment):
         self.csrs.create()
         mongos_start_port = self.port + self.config_servers
         mongos_ports = range(mongos_start_port, mongos_start_port + self.mongos_count)
+        mongos_end_port = mongos_start_port
         for port in mongos_ports:
             idx = mongos_start_port - port + 1
             mongos = Mongos(
@@ -632,7 +645,16 @@ class ShardedCluster(Deployment):
                 group_name=self.name
             ).create()
             self.mongos.append(mongos)
-        # TODO: Create shards
+            mongos_end_port = port
+        self.shards = [
+            Shard(
+                name=f"{self.name}-sh-{i}",
+                port=mongos_end_port + (i * self.shard_size) + 1,
+                size=self.shard_size,
+                shard_id=str(i)
+            ) for i in range(self.shard_count)
+        ]
+        # TODO: run shard init command on the first mongos
         return self
         
 
