@@ -11,16 +11,17 @@ from typing import List, Dict, Union
 import docker
 from docker import DockerClient
 from docker.errors import APIError
-from docker.models.networks import Network
 from docker.models.containers import Container
+from docker.models.networks import Network
 from docker.types import Mount, NetworkingConfig, EndpointConfig
+from unique_names_generator import get_random_name
+from unique_names_generator.data import ADJECTIVES, ANIMALS
 
 from tomodo.common.errors import InvalidDeploymentType, PortsTakenException, InvalidShellException
 from tomodo.common.util import get_os, is_port_range_available, with_retry, clean_up_mongo_output
 
 logger = logging.getLogger("rich")
 DOCKER_ENDPOINT_CONFIG_VER = "1.43"
-
 
 
 class Status(Enum):
@@ -51,6 +52,10 @@ class Status(Enum):
         return Status.UNKNOWN
 
 
+def generate_name():
+    return get_random_name(combo=[ADJECTIVES, ANIMALS], separator="-", style="lowercase")
+
+
 def _network_name_from_container(container: Container) -> str:
     networks: Dict = container.attrs.get("NetworkSettings", {}).get("Networks")
     network_names = list(networks.keys())
@@ -59,12 +64,14 @@ def _network_name_from_container(container: Container) -> str:
     return network_names[0]
 
 
-def create_mongod_container(image: str, port: int, name: str, network: Network, group_name: str,
-                            replset_name: str = None,
-                            config_svr: bool = False, replica_set: bool = False, sharded: bool = False,
-                            shard_id: int = 0, arbiter: bool = False, ephemeral: bool = False, username: str = None,
-                            password: str = None, shards: int = 0) -> Container:
+def create_mongod_container(mongod: "Mongod", image: str, port: int, name: str, network: Network, group_name: str,
+                            sharded: bool = False, shard_id: int = 0, arbiter: bool = False,
+                            ephemeral: bool = False, username: str = None, password: str = None,
+                            shards: int = 0) -> Container:
     logger.info("Creating container from '%s'. Port %d will be exposed to your host", image, port)
+    is_config_svr = isinstance(mongod, ConfigServer)
+    is_shard_member = isinstance(mongod, ShardMember)
+    is_replica = isinstance(mongod, Replica)
     host_path = ""
     container_path = ""
     mounts = []
@@ -104,22 +111,22 @@ def create_mongod_container(image: str, port: int, name: str, network: Network, 
         )
         command.extend(["--keyFile", target_keyfile_path])
     deployment_type = "Standalone"
-    if config_svr:
-        command.extend(["--configsvr", "--replSet", replset_name])
+    if is_config_svr:
+        command.extend(["--configsvr", "--replSet", mongod.parent_name])
         deployment_type = "Sharded Cluster"
-    elif replica_set:
-        command.extend(["--replSet", replset_name])
+    elif is_shard_member:
+        command.extend(["--shardsvr", "--replSet", mongod.parent_name])
+        deployment_type = "Sharded Cluster"
+    elif is_replica:
+        command.extend(["--replSet", mongod.parent_name])
         deployment_type = "Replica Set"
-    elif sharded:
-        command.extend(["--shardsvr", "--replSet", replset_name])
-        deployment_type = "Sharded Cluster"
 
     labels = {
         "source": "tomodo",
         "tomodo-name": name,
-        "tomodo-group": group_name,
+        "tomodo-group": mongod.group_name,
         "tomodo-port": str(port),
-        "tomodo-role": "cfg-svr" if config_svr else "rs-member" if replset_name else "standalone",
+        "tomodo-role": "cfg-svr" if is_config_svr else "rs-member" if mongod.parent_name else "standalone",
         "tomodo-type": deployment_type,
         "tomodo-data-dir": host_path,
         "tomodo-container-data-dir": container_path,
@@ -138,7 +145,7 @@ def create_mongod_container(image: str, port: int, name: str, network: Network, 
     return container, host_path, container_path
 
 
-def create_mongos_container(image: str,port: int, name: str, group_name: str,
+def create_mongos_container(image: str, port: int, name: str, group_name: str,
                             csrs: "ConfigServerReplicaSet", network: Network, shard_count: int):
     logger.info("Creating container from '%s'. Port %d will be exposed to your host", image, port)
     command = [
@@ -262,13 +269,13 @@ class Deployment(ABC):
     group_name: str
     image: str = "mongo:latest"
 
-    def __init__(self, name: str, version: str = None, network_name: str = "mongo_network",
+    def __init__(self, name: str = None, version: str = None, network_name: str = "mongo_network",
                  status: Status = Status.STAGED, port: int = 27017, group_name: str = None, image: str = None):
         self.docker_client = docker.from_env()
         self.status = status
         self.version = version
         self.network_name = network_name
-        self.name = name
+        self.name = name or generate_name()
         self.port = port
         self.group_name = group_name
         self.image = image
@@ -351,6 +358,7 @@ class Deployment(ABC):
 class Mongod(Deployment):
     container: Container
     host_data_dir: str
+    parent_name: str
     container_data_dir: str
     is_arbiter: bool = False
     is_ephemeral: bool = False
@@ -361,7 +369,8 @@ class Mongod(Deployment):
                  port: int = 27017, name: str = None, group_name: str = None, container: Container = None,
                  host_data_dir: str = None, container_data_dir: str = None,
                  is_arbiter: bool = False, is_ephemeral: bool = False, status: Status = Status.STAGED,
-                 image: str = "mongo:latest", username: str = None, password: str = None):
+                 image: str = "mongo:latest", username: str = None, password: str = None,
+                 parent_name: str = None):
         super().__init__(version=version, name=name, port=port, network_name=network_name, group_name=group_name,
                          status=status, image=image)
         self.container = container
@@ -371,6 +380,7 @@ class Mongod(Deployment):
         self.is_ephemeral = is_ephemeral
         self.username = username
         self.password = password
+        self.parent_name = parent_name
 
     @property
     def is_auth_enabled(self) -> bool:
@@ -408,6 +418,7 @@ class Mongod(Deployment):
         if not is_port_range_available((self.port,)):
             raise PortsTakenException
         container, host_data_dir, container_data_dir = create_mongod_container(
+            mongod=self,
             image=self.image,
             port=self.port,
             name=self.name,
@@ -448,15 +459,15 @@ class Standalone(Mongod):
 class Mongos(Mongod):
     shard_count: int
     csrs: "ConfigServerReplicaSet"
-    
+
     def __init__(self, name: str, port: int, shard_count: int, version: str, csrs: "ConfigServerReplicaSet",
-                 status: Status = Status.STAGED, network_name: str = "mongo_network",
+                 status: Status = Status.STAGED, network_name: str = "mongo_network", group_name: str = None,
                  image: str = "mongo:latest"):
         super().__init__(name=name, port=port, version=version, status=status,
-                         network_name=network_name, image=image)
+                         network_name=network_name, image=image, group_name=group_name)
         self.shard_count = shard_count
-        self.csrs
-    
+        self.csrs = csrs
+
     def create(self) -> "Mongos":
         self.container = create_mongos_container(
             image=self.image,
@@ -469,22 +480,28 @@ class Mongos(Mongod):
         return self
 
 
+class Replica(Mongod):
+    pass
+
+
 class ReplicaSet(Deployment):
-    members: List[Mongod]
+    members: List[Replica]
     size: int
     has_arbiter: bool = False
     username: str = None
     password: str = None
     is_csrs: bool = False
+    is_shard: bool = False
+    member_class = Replica
 
     def __init__(self, version: str = None,
                  port: int = 27017, name: str = None, group_name: str = None,
                  members: List[Mongod] = None, status: Status = Status.STAGED,
                  has_arbiter: bool = False, size: int = None, image: str = "mongo:latest",
-                 network_name: str = "mongo_network", username: str = None, password: str = None,
-                 is_csrs: bool = False):
+                 network_name: str = "mongo_network", username: str = None, password: str = None):
         super().__init__(name=name, version=version, status=status,
                          network_name=network_name, image=image)
+        # TODO: NAME IS NONE!!!!
         self.port = port
         self.group_name = group_name or name
         self.members = members or []
@@ -492,7 +509,6 @@ class ReplicaSet(Deployment):
         self.has_arbiter = has_arbiter
         self.username = username
         self.password = password
-        self.is_csrs = is_csrs
 
     @staticmethod
     def from_container_group(containers: List[Container]) -> "ReplicaSet":
@@ -519,15 +535,16 @@ class ReplicaSet(Deployment):
             logger.info("An arbiter node will also be provisioned")
         members: List[Mongod] = []
         for port in ports:
-            idx = port - start_port + 1  # TODO: change to [0..N-1]
+            idx = port - start_port
             members.append(
-                Mongod(
+                self.member_class(
                     name=f"{self.name}-{idx}",
                     port=port,
                     group_name=self.group_name,
                     is_arbiter=self.has_arbiter and idx == len(list(ports)),
                     network_name=self.network_name,
-                    image=self.image
+                    image=self.image,
+                    parent_name=self.name
                 )
             )
         for member in members:
@@ -552,20 +569,26 @@ class ReplicaSet(Deployment):
 
         first_mongod = self.members[0]
         for script in init_scripts:
-            # TODO: this can probably become a single initialization command
+            # TODO: this should become a single initialization command
             run_shell_command(mongo_cmd=script, mongod=first_mongod)
 
     def __str__(self) -> str:
         return ""
 
 
-class ConfigServer(Mongod):
+class ConfigServer(Replica):
+    pass
+
+
+class ShardMember(Replica):
     pass
 
 
 class Shard(ReplicaSet):
+    is_shard: bool = False
     shard_id: str
-    
+    member_class: type = ShardMember
+
     def __init__(self, version: str, port: int, name: str, shard_id: str,
                  group_name: str = None, status: Status = Status.STAGED, image: str = "mongo:latest",
                  network_name: str = "mongo_network", shard_count: int = 2, size: int = 3):
@@ -575,11 +598,18 @@ class Shard(ReplicaSet):
         self.group_name = group_name or name
         self.shard_count = shard_count
         self.size = size
-        self.shard_id
+        self.shard_id = shard_id
+
+    @property
+    def shard_host(self) -> str:
+        hosts = ",".join([f"{m.name}:{m.port}" for m in self.members])
+        return f"{self.name}/{hosts}"
 
 
 class ConfigServerReplicaSet(ReplicaSet):
+    is_csrs: bool = True
     members: List[ConfigServer]
+    member_class: type = ConfigServer
 
     @property
     def config_db(self) -> str:
@@ -589,6 +619,7 @@ class ConfigServerReplicaSet(ReplicaSet):
 
 class ShardedCluster(Deployment):
     shard_count: int = 2
+    members: List[ShardMember]
     shards: List[Shard]
     shard_size: int = 3
     config_servers: int = 1
@@ -622,10 +653,10 @@ class ShardedCluster(Deployment):
 
     def create(self) -> "ShardedCluster":
         logger.info("This action will provision a MongoDB sharded cluster with %d shards (%d replicas each)",
-                    self.config.shards, self.config.shard_size)
+                    self.shard_count, self.shard_size)
         # (# replicas x # shards) + # config servers + # mongos
-        num_ports = (self.shards * self.shard_size) + self.config_servers + self.mongos_count
-        ports = range(self.config.port, self.config.port + num_ports)
+        num_ports: int = (self.shard_count * self.shard_size) + self.config_servers + self.mongos_count
+        ports = range(self.port, self.port + num_ports)
         if not is_port_range_available(tuple(ports)):
             raise PortsTakenException
         self.csrs = ConfigServerReplicaSet(
@@ -641,23 +672,33 @@ class ShardedCluster(Deployment):
         for port in mongos_ports:
             idx = mongos_start_port - port + 1
             mongos = Mongos(
+                version=self.version,
                 port=port,
                 name=f"{self.name}-mongos-{idx}",
-                group_name=self.name
+                group_name=self.name,
+                csrs=self.csrs,
+                shard_count=self.shard_count
             ).create()
             self.mongos.append(mongos)
             mongos_end_port = port
         self.shards = [
             Shard(
+                version=self.version,
                 name=f"{self.name}-sh-{i}",
                 port=mongos_end_port + (i * self.shard_size) + 1,
                 size=self.shard_size,
                 shard_id=str(i)
-            ) for i in range(self.shard_count)
+            ).create() for i in range(self.shard_count)
         ]
-        # TODO: run shard init command on the first mongos
+        shard_init_commands = []
+        for shard in self.shards:
+            shard_init_commands.append(
+                f"sh.addShard('{shard.shard_host}')"
+            )
+        for cmd in shard_init_commands:
+            run_shell_command(mongo_cmd=cmd, mongod=self.mongos[0])
+
         return self
-        
 
     def __str__(self) -> str:
         return ""
@@ -717,5 +758,5 @@ class OpsManagerDeploymentServer(Deployment):
 if __name__ == "__main__":
     # mongod = Standalone(name="my-mongo", port=27017, network_name="my-network")
     # mongod.create()
-    rs = ReplicaSet(name="jahr", port=2000, size=5, username="admin", password="passw0rd")
+    rs = ReplicaSet(size=3, username="admin", password="passw0rd")
     rs.create()
