@@ -137,6 +137,31 @@ def create_mongod_container(image: str, port: int, name: str, network: Network, 
     return container, host_path, container_path
 
 
+def create_mongos_container(image: str,port: int, name: str, group_name: str,
+                            csrs: "ConfigServerReplicaSet", network: Network, shard_count: int):
+    logger.info("Creating container from '%s'. Port %d will be exposed to your host", image, port)
+    command = [
+        "mongos",
+        "--bind_ip_all",
+        "--port", str(port),
+        "--configdb", csrs.config_db
+    ]
+    labels = {
+        "source": "tomodo",
+        "tomodo-name": name,
+        "tomodo-group": group_name,
+        "tomodo-port": str(port),
+        "tomodo-role": "mongos",
+        "tomodo-type": "Sharded Cluster",
+        "tomodo-shard-count": str(shard_count or 0),
+    }
+    return _create_docker_container(
+        name=name, image=image, labels=labels, mounts=[],
+        environment={}, port=port, command=command,
+        network=network
+    )
+
+
 def wait_for_readiness(mongod: "Mongod"):
     logger.debug("Checking the readiness of %s", mongod.name)
     mongo_cmd = "db.runCommand({ping: 1}).ok"
@@ -285,9 +310,6 @@ class Deployment(ABC):
             sorted_groups[group] = sorted(grouped[group], key=lambda c: int(c.labels.get("tomodo-port", 0)))
         return [Deployment.from_container_group(containers) for containers in sorted_groups.items()]
 
-    def _create_docker_container(self) -> Container:
-        pass
-
     @staticmethod
     def from_container_group(containers: List[Container]) -> "Deployment":
         container = containers[0]
@@ -423,7 +445,27 @@ class Standalone(Mongod):
 
 
 class Mongos(Mongod):
-    pass
+    shard_count: int
+    csrs: "ConfigServerReplicaSet"
+    
+    def __init__(self, name: str, port: int, shard_count: int, version: str, csrs: "ConfigServerReplicaSet",
+                 status: Status = Status.STAGED, network_name: str = "mongo_network",
+                 image: str = "mongo:latest"):
+        super().__init__(name=name, port=port, version=version, status=status,
+                         network_name=network_name, image=image)
+        self.shard_count = shard_count
+        self.csrs
+    
+    def create(self) -> "Mongos":
+        self.container = create_mongos_container(
+            image=self.image,
+            port=self.port,
+            name=self.name,
+            csrs=self.csrs,
+            network=get_network(self.network_name),
+            shard_count=self.shard_count
+        )
+        return self
 
 
 class ReplicaSet(Deployment):
@@ -433,22 +475,24 @@ class ReplicaSet(Deployment):
     size: int = None
     username: str = None
     password: str = None
+    is_csrs: bool = False
 
     def __init__(self, version: str = None,
                  port: int = 27017, name: str = None, group_name: str = None,
                  members: List[Mongod] = None, status: Status = Status.STAGED,
                  has_arbiter: bool = False, size: int = None, image: str = "mongo:latest",
-                 network_name: str = "mongo_network", username: str = None, password: str = None):
+                 network_name: str = "mongo_network", username: str = None, password: str = None,
+                 is_csrs: bool = False):
         super().__init__(name=name, version=version, status=status,
                          network_name=network_name, image=image)
         self.port = port
-        self.name = name
         self.group_name = group_name or name
         self.members = members or []
         self.size = size or len(self.members)
         self.has_arbiter = has_arbiter
         self.username = username
         self.password = password
+        self.is_csrs = is_csrs
 
     @staticmethod
     def from_container_group(containers: List[Container]) -> "ReplicaSet":
@@ -499,10 +543,8 @@ class ReplicaSet(Deployment):
                 "db.adminCommand({ setDefaultRWConcern: 1, defaultWriteConcern: { 'w': %s } })" % str(rc)
             )
         for m in self.members[1:self.size]:
-            # TODO: is this even needed?
-            # logger.info("Checking the readiness of %s", m.name)
-
-            # self.wait_for_mongod_readiness(mongod=m)
+            logger.info("Checking the readiness of %s", m.name)
+            m.wait_for_mongod_readiness()
             if m.is_arbiter:
                 init_scripts.append(f"rs.addArb('{m.name}:{m.port}')")
             else:
@@ -521,7 +563,41 @@ class ConfigServer(Mongod):
     pass
 
 
+class Shard(ReplicaSet):
+    pass
+
+
+class ConfigServerReplicaSet(ReplicaSet):
+    
+    @property
+    def config_db(self) -> str:
+        hosts = ",".join([f"{m.name}:{m.port}" for m in self.members])
+        return f"{self.name}/{hosts}"
+
+
 class ShardedCluster(Deployment):
+    shards: int = 2
+    replicas: int = 3
+    config_servers: int = 1
+    mongos_count: int = 1
+    mongos: List[Mongos]
+    csrs: ConfigServerReplicaSet = None
+    port: int = 27017
+
+    def __init__(self, version: str = None, port: int = 27017, name: str = None,
+                 group_name: str = None, csrs: ConfigServerReplicaSet = None,
+                 status: Status = Status.STAGED, image: str = "mongo:latest",
+                 network_name: str = "mongo_network", mongos_count: int = 1,
+                 config_servers: int = 1, shards: int = 2, replicas: int = 3):
+        super().__init__(name=name, version=version, status=status,
+                         network_name=network_name, image=image)
+        self.port = port
+        self.group_name = group_name or name
+        self.csrs = csrs
+        self.mongos_count = mongos_count
+        self.config_servers = config_servers
+        self.shards = shards
+        self.replicas = replicas
 
     @staticmethod
     def from_container(container: Container) -> "Deployment":
@@ -531,8 +607,34 @@ class ShardedCluster(Deployment):
     def type_str(self) -> str:
         return "sharded-cluster"
 
-    def create(self):
-        pass
+    def create(self) -> "ShardedCluster":
+        logger.info("This action will provision a MongoDB sharded cluster with %d shards (%d replicas each)",
+                    self.config.shards, self.config.replicas)
+        # (replicas x shards) + config server + mongos
+        num_ports = (self.shards * self.replicas) + self.config_servers + self.mongos_count
+        ports = range(self.config.port, self.config.port + num_ports)
+        if not is_port_range_available(tuple(ports)):
+            raise PortsTakenException
+        self.csrs = ConfigServerReplicaSet(
+            name=f"{self.name}-cfg-svr",
+            group_name=self.name,
+            port=self.port,
+            size=self.config_servers
+        )
+        self.csrs.create()
+        mongos_start_port = self.port + self.config_servers
+        mongos_ports = range(mongos_start_port, mongos_start_port + self.mongos_count)
+        for port in mongos_ports:
+            idx = mongos_start_port - port + 1
+            mongos = Mongos(
+                port=port,
+                name=f"{self.name}-mongos-{idx}",
+                group_name=self.name
+            ).create()
+            self.mongos.append(mongos)
+        # TODO: Create shards
+        return self
+        
 
     def __str__(self) -> str:
         return ""
