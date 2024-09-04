@@ -14,6 +14,7 @@ from docker.errors import APIError
 from docker.models.containers import Container
 from docker.models.networks import Network
 from docker.types import Mount, NetworkingConfig, EndpointConfig
+from pymongo import MongoClient
 from unique_names_generator import get_random_name
 from unique_names_generator.data import ADJECTIVES, ANIMALS
 
@@ -145,6 +146,35 @@ def create_mongod_container(mongod: "Mongod", image: str, port: int, name: str, 
     return container, host_path, container_path
 
 
+def create_atlas_container(image: str, port: int, name: str, network: Network,
+                           username: str, password: str) -> Container:
+    logger.info("Creating container from '%s'. Port %d will be exposed to your host", image, port)
+    environment = [
+        f"PORT={port}",
+        f"NAME={name}",
+    ]
+    if username and password:
+        environment.extend([f"MONGODB_INITDB_ROOT_USERNAME={username}",
+                            f"MONGODB_INITDB_ROOT_PASSWORD={password}"])
+    labels = {
+        "source": "tomodo",
+        "tomodo-name": name,
+        "tomodo-group": name,
+        "tomodo-port": str(port),
+        "tomodo-data-dir": "",
+        "tomodo-container-data-dir": "",
+        "tomodo-role": "atlas",
+        "tomodo-type": "Atlas Deployment",
+        "tomodo-shard-count": "0",
+        "tomodo-ephemeral": "1"
+    }
+    return _create_docker_container(
+        name=name, image=image, labels=labels, mounts=[],
+        environment=environment, port=port, command=None,
+        network=network
+    )
+
+
 def create_mongos_container(image: str, port: int, name: str, group_name: str,
                             csrs: "ConfigServerReplicaSet", network: Network, shard_count: int):
     logger.info("Creating container from '%s'. Port %d will be exposed to your host", image, port)
@@ -165,7 +195,7 @@ def create_mongos_container(image: str, port: int, name: str, group_name: str,
     }
     return _create_docker_container(
         name=name, image=image, labels=labels, mounts=[],
-        environment={}, port=port, command=command,
+        environment=[], port=port, command=command,
         network=network
     )
 
@@ -186,8 +216,22 @@ def wait_for_readiness(mongod: "Mongod"):
     logger.info("Server %s is ready to accept connections", mongod.name)
 
 
+def wait_for_atlas_deployment_readiness(atlas: "Atlas"):
+    # TODO: doesn't work
+    logger.debug("Checking the readiness of %s", atlas.name)
+    client_args = {"directConnection": True}
+    if atlas.username and atlas.password:
+        client_args.update(username=atlas.username, password=atlas.password)
+    client = MongoClient(host="localhost", port=atlas.port, **client_args)
+    res = client.admin.command("ping")
+    if not int(res["ok"]) == 1:
+        logger.debug("Server %s is not ready to accept connections", atlas.name)
+        print("Server %s is not ready to accept connections" % atlas.name)
+        raise Exception("Server isn't ready")
+    logger.info("Server %s is ready to accept connections", atlas.name)
+
 def _create_docker_container(name: str, image: str, labels: Dict, mounts: List[Mount], environment: List[str],
-                             port: int, command: List[str], network: Network) -> Container:
+                             port: int, command: Union[None, List[str]], network: Network) -> Container:
     networking_config = NetworkingConfig(
         endpoints_config={
             network.name: EndpointConfig(version=DOCKER_ENDPOINT_CONFIG_VER, aliases=[name])
@@ -470,6 +514,7 @@ class Mongos(Mongod):
 
     def create(self) -> "Mongos":
         self.container = create_mongos_container(
+            group_name=self.group_name,
             image=self.image,
             port=self.port,
             name=self.name,
@@ -490,8 +535,6 @@ class ReplicaSet(Deployment):
     has_arbiter: bool = False
     username: str = None
     password: str = None
-    is_csrs: bool = False
-    is_shard: bool = False
     member_class = Replica
 
     def __init__(self, version: str = None,
@@ -585,7 +628,6 @@ class ShardMember(Replica):
 
 
 class Shard(ReplicaSet):
-    is_shard: bool = False
     shard_id: str
     member_class: type = ShardMember
 
@@ -607,7 +649,6 @@ class Shard(ReplicaSet):
 
 
 class ConfigServerReplicaSet(ReplicaSet):
-    is_csrs: bool = True
     members: List[ConfigServer]
     member_class: type = ConfigServer
 
@@ -669,8 +710,9 @@ class ShardedCluster(Deployment):
         mongos_start_port = self.port + self.config_servers
         mongos_ports = range(mongos_start_port, mongos_start_port + self.mongos_count)
         mongos_end_port = mongos_start_port
+        self.mongos = []
         for port in mongos_ports:
-            idx = mongos_start_port - port + 1
+            idx = port - mongos_start_port
             mongos = Mongos(
                 version=self.version,
                 port=port,
@@ -704,18 +746,44 @@ class ShardedCluster(Deployment):
         return ""
 
 
-class Atlas(Deployment):
+class Atlas(Mongod):
+
+    def __init__(self, version: str = None, network_name: str = "mongo_network",
+                 port: int = 27017, name: str = None, group_name: str = None, container: Container = None,
+                 status: Status = Status.STAGED, image: str = "mongodb/mongodb-atlas-local:latest",
+                 username: str = None, password: str = None):
+        super().__init__(version=version, name=name, port=port, network_name=network_name, group_name=group_name,
+                         status=status, image=image, container=container, username=username,
+                         password=password)
 
     @staticmethod
     def from_container(container: Container) -> "Deployment":
         pass
 
+    def create(self) -> "Atlas":
+        if not is_port_range_available((self.port,)):
+            raise PortsTakenException
+        container = create_atlas_container(
+            image=self.image,
+            port=self.port,
+            name=self.name,
+            network=get_network(self.network_name),
+            username=self.username,
+            password=self.password
+        )
+        self.container = container
+        logger.info("MongoDB Atlas container created [id: %s]", self.container.short_id)
+        logger.info("Checking the readiness of %s", self.name)
+        self.wait_for_mongod_readiness()
+        return self
+
+    @with_retry(max_attempts=60, delay=2, retryable_exc=(APIError, Exception))
+    def wait_for_mongod_readiness(self):
+        wait_for_atlas_deployment_readiness(atlas=self)
+
     @property
     def type_str(self) -> str:
         return "atlas-deployment"
-
-    def create(self):
-        pass
 
     def __str__(self) -> str:
         return ""
@@ -758,5 +826,7 @@ class OpsManagerDeploymentServer(Deployment):
 if __name__ == "__main__":
     # mongod = Standalone(name="my-mongo", port=27017, network_name="my-network")
     # mongod.create()
-    rs = ReplicaSet(size=3, username="admin", password="passw0rd")
-    rs.create()
+    # sc = ShardedCluster(shard_count=1, shard_size=3, config_servers=3, mongos_count=3)
+    # sc.create()
+    atlasasdf = Atlas(port=27000)
+    atlasasdf.create()
