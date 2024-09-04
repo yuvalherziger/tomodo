@@ -111,16 +111,16 @@ def create_mongod_container(mongod: "Mongod", image: str, port: int, name: str, 
             Mount(target=target_keyfile_path, source=keyfile_path, type="bind")
         )
         command.extend(["--keyFile", target_keyfile_path])
-    deployment_type = "Standalone"
+    deployment_type = Standalone.type_str
     if is_config_svr:
         command.extend(["--configsvr", "--replSet", mongod.parent_name])
-        deployment_type = "Sharded Cluster"
+        deployment_type = ShardedCluster.type_str
     elif is_shard_member:
         command.extend(["--shardsvr", "--replSet", mongod.parent_name])
-        deployment_type = "Sharded Cluster"
+        deployment_type = ShardedCluster.type_str
     elif is_replica:
         command.extend(["--replSet", mongod.parent_name])
-        deployment_type = "Replica Set"
+        deployment_type = ReplicaSet.type_str
 
     labels = {
         "source": "tomodo",
@@ -230,6 +230,7 @@ def wait_for_atlas_deployment_readiness(atlas: "Atlas"):
         raise Exception("Server isn't ready")
     logger.info("Server %s is ready to accept connections", atlas.name)
 
+
 def _create_docker_container(name: str, image: str, labels: Dict, mounts: List[Mount], environment: List[str],
                              port: int, command: Union[None, List[str]], network: Network) -> Container:
     networking_config = NetworkingConfig(
@@ -302,6 +303,31 @@ def run_shell_command(mongo_cmd: str, mongod: "Mongod", shell: str = "mongosh",
     return command_exit_code, clean_up_mongo_output(command_output.decode("utf-8").strip()), mongod.container.short_id
 
 
+def group_containers(containers: List[Container]) -> Dict:
+    grouped = {}
+    for container in containers:
+        group = container.labels.get("tomodo-group")
+        if group:
+            if group in grouped:
+                grouped[group].append(container)
+            else:
+                grouped[group] = [container]
+    sorted_groups = {}
+    for group in grouped.keys():
+        sorted_groups[group] = sorted(grouped[group], key=lambda c: int(c.labels.get("tomodo-port", 0)))
+    return sorted_groups
+
+
+def get_version_from_container(container: Container) -> str:
+    return next(
+        (
+            var.split("=")[1] for var in container.attrs.get("Config", {}).get("Env", []) if
+            var.startswith(f"MONGO_VERSION=")
+        ),
+        None
+    )
+
+
 class Deployment(ABC):
     version: str
     _network: Network
@@ -312,25 +338,20 @@ class Deployment(ABC):
     port: int = 27017
     group_name: str
     image: str = "mongo:latest"
+    type_str: str = None
 
     def __init__(self, name: str = None, version: str = None, network_name: str = "mongo_network",
                  status: Status = Status.STAGED, port: int = 27017, group_name: str = None, image: str = None):
-        self.docker_client = docker.from_env()
         self.status = status
         self.version = version
         self.network_name = network_name
         self.name = name or generate_name()
         self.port = port
-        self.group_name = group_name
+        self.group_name = group_name or self.name
         self.image = image
 
     @abstractmethod
     def create(self):
-        raise NotImplementedError
-
-    @property
-    @abstractmethod
-    def type_str(self) -> str:
         raise NotImplementedError
 
     def start(self):
@@ -342,24 +363,22 @@ class Deployment(ABC):
     def remove(self):
         pass
 
-    def get(self, name: str) -> "Deployment":
-        pass
+    @staticmethod
+    def get(name: str) -> "Deployment":
+        containers = docker.from_env().containers.list(
+            filters={"label": f"tomodo-group={name}", },
+            all=True
+        )
+        sored_group: List[Container] = group_containers(containers).get(name)
+        return Deployment.from_container_group(sored_group)
 
-    def list(self, include_stopped: bool = False) -> List["Deployment"]:
-        containers: List[Container] = self.docker_client.containers.list(
+    @staticmethod
+    def list(include_stopped: bool = False) -> List["Deployment"]:
+        containers: List[Container] = docker.from_env().containers.list(
             filters={"label": "source=tomodo"}, all=include_stopped
         )
-        grouped = {}
-        for container in containers:
-            group = container.labels.get("tomodo-group")
-            if group:
-                if group in grouped:
-                    grouped[group].append(container)
-                else:
-                    grouped[group] = [container]
-        sorted_groups = {}
-        for group in grouped.keys():
-            sorted_groups[group] = sorted(grouped[group], key=lambda c: int(c.labels.get("tomodo-port", 0)))
+
+        sorted_groups = group_containers(containers)
         return [Deployment.from_container_group(containers) for containers in sorted_groups.items()]
 
     @staticmethod
@@ -371,7 +390,7 @@ class Deployment(ABC):
         if deployment_type == ReplicaSet.type_str:
             return ReplicaSet.from_container_group(containers)
         if deployment_type == ShardedCluster.type_str:
-            return ShardedCluster.from_container(container)
+            return ShardedCluster.from_container_group(containers)
         if deployment_type == Atlas.type_str:
             return Atlas.from_container(container)
         if deployment_type == OpsManager.type_str:
@@ -384,7 +403,7 @@ class Deployment(ABC):
     def network(self) -> Network:
         if self._network is None:
 
-            networks = self.docker_client.networks.list(filters={"name": self.network_name})
+            networks = docker.from_env().networks.list(filters={"name": self.network_name})
             if len(networks) > 0:
                 self._network = networks[0]
                 logger.info(
@@ -392,7 +411,7 @@ class Deployment(ABC):
                     self.network.name, self.network.short_id
                 )
             else:
-                self._network = self.docker_client.networks.create(name=self.network_name)
+                self._network = docker.from_env().networks.create(name=self.network_name)
                 logger.info(
                     "Docker network '%s' was created [id: %s]", self.network_name, self.network.short_id
                 )
@@ -408,6 +427,7 @@ class Mongod(Deployment):
     is_ephemeral: bool = False
     username: str = None
     password: str = None
+    type_str: str = "standalone"
 
     def __init__(self, version: str = None, network_name: str = "mongo_network",
                  port: int = 27017, name: str = None, group_name: str = None, container: Container = None,
@@ -433,13 +453,7 @@ class Mongod(Deployment):
     @staticmethod
     def from_container(container: Container) -> "Mongod":
         labels = container.labels
-        version = next(
-            (
-                var.split("=")[1] for var in container.attrs.get("Config", {}).get("Env", []) if
-                var.startswith(f"MONGO_VERSION=")
-            ),
-            None
-        )
+        version = get_version_from_container(container)
         return Mongod(
             name=labels.get("tomodo-name"),
             group_name=labels.get("tomodo-group"),
@@ -453,10 +467,6 @@ class Mongod(Deployment):
             image=container.image.tags[0],  # Should never be empty
             network_name=_network_name_from_container(container)
         )
-
-    @property
-    def type_str(self) -> str:
-        return "standalone"
 
     def create(self) -> "Mongod":
         if not is_port_range_available((self.port,)):
@@ -504,13 +514,30 @@ class Mongos(Mongod):
     shard_count: int
     csrs: "ConfigServerReplicaSet"
 
-    def __init__(self, name: str, port: int, shard_count: int, version: str, csrs: "ConfigServerReplicaSet",
+    def __init__(self, name: str, port: int, shard_count: int, version: str, csrs: "ConfigServerReplicaSet" = None,
                  status: Status = Status.STAGED, network_name: str = "mongo_network", group_name: str = None,
-                 image: str = "mongo:latest"):
+                 image: str = "mongo:latest", container: Container = None):
         super().__init__(name=name, port=port, version=version, status=status,
-                         network_name=network_name, image=image, group_name=group_name)
+                         network_name=network_name, image=image, group_name=group_name,
+                         container=container)
         self.shard_count = shard_count
         self.csrs = csrs
+
+    @staticmethod
+    def from_container(container: Container) -> "Mongos":
+        labels = container.labels
+        version = get_version_from_container(container)
+        return Mongos(
+            name=labels.get("tomodo-name"),
+            group_name=labels.get("tomodo-group"),
+            port=int(labels.get("tomodo-port", 0)),
+            container=container,
+            status=Status.from_container(container),
+            version=version,
+            image=container.image.tags[0],  # Should never be empty
+            network_name=_network_name_from_container(container),
+            shard_count=int(labels.get("tomodo-shard-count", 0))
+        )
 
     def create(self) -> "Mongos":
         self.container = create_mongos_container(
@@ -537,16 +564,17 @@ class ReplicaSet(Deployment):
     password: str = None
     member_class = Replica
 
+    type_str: str = "replica-set"
+
     def __init__(self, version: str = None,
                  port: int = 27017, name: str = None, group_name: str = None,
                  members: List[Mongod] = None, status: Status = Status.STAGED,
-                 has_arbiter: bool = False, size: int = None, image: str = "mongo:latest",
+                 has_arbiter: bool = False, size: int = 3, image: str = "mongo:latest",
                  network_name: str = "mongo_network", username: str = None, password: str = None):
         super().__init__(name=name, version=version, status=status,
-                         network_name=network_name, image=image)
+                         network_name=network_name, image=image, group_name=group_name)
         # TODO: NAME IS NONE!!!!
         self.port = port
-        self.group_name = group_name or name
         self.members = members or []
         self.size = size or len(self.members)
         self.has_arbiter = has_arbiter
@@ -559,15 +587,12 @@ class ReplicaSet(Deployment):
         for container in containers:
             members.append(Mongod.from_container(container))
         return ReplicaSet(
+            name=members[0].group_name,
             members=members,
             port=members[0].port,
             version=members[0].version,
             status=Status.from_group([m.status for m in members])
         )
-
-    @property
-    def type_str(self) -> str:
-        return "replica-set"
 
     def create(self):
         start_port = self.port
@@ -616,7 +641,12 @@ class ReplicaSet(Deployment):
             run_shell_command(mongo_cmd=script, mongod=first_mongod)
 
     def __str__(self) -> str:
-        return ""
+        """
+        :return: A Markdown table row representing the instance
+        """
+        port_range: str = f"{self.members[0].port}-{self.members[-1].port}"
+        data = [self.name, "Replica Set", self.status.name, str(len(self.members)), self.version, port_range]
+        return f"|{'|'.join(data)}|"
 
 
 class ConfigServer(Replica):
@@ -625,6 +655,9 @@ class ConfigServer(Replica):
 
 class ShardMember(Replica):
     pass
+    # @staticmethod
+    # def from_container(container: Container) -> "ShardMember":
+    #     return super().from_container(container)
 
 
 class Shard(ReplicaSet):
@@ -633,11 +666,11 @@ class Shard(ReplicaSet):
 
     def __init__(self, version: str, port: int, name: str, shard_id: str,
                  group_name: str = None, status: Status = Status.STAGED, image: str = "mongo:latest",
-                 network_name: str = "mongo_network", shard_count: int = 2, size: int = 3):
+                 network_name: str = "mongo_network", shard_count: int = 2, size: int = 3,
+                 members: List[ShardMember] = None):
         super().__init__(name=name, version=version, status=status,
-                         network_name=network_name, image=image)
+                         network_name=network_name, image=image, members=members, group_name=group_name)
         self.port = port
-        self.group_name = group_name or name
         self.shard_count = shard_count
         self.size = size
         self.shard_id = shard_id
@@ -647,10 +680,31 @@ class Shard(ReplicaSet):
         hosts = ",".join([f"{m.name}:{m.port}" for m in self.members])
         return f"{self.name}/{hosts}"
 
+    @staticmethod
+    def from_container_group(containers: List[Container]) -> "Shard":
+        shard_members: List[ShardMember] = []
+        group_name = containers[0].labels.get("tomodo-group")
+        shard_id = containers[0].labels.get("tomodo-shard-id")
+        for container in containers:
+            shard_members.append(ShardMember.from_container(container))
+        return Shard(
+            name=shard_members[0].group_name,
+            members=shard_members,
+            port=shard_members[0].port,
+            version=shard_members[0].version,
+            status=Status.from_group([m.status for m in shard_members]),
+            group_name=group_name,
+            shard_id=shard_id
+        )
+
 
 class ConfigServerReplicaSet(ReplicaSet):
     members: List[ConfigServer]
     member_class: type = ConfigServer
+
+    # @staticmethod
+    # def from_container_group(containers: List[Container]) -> "ConfigServerReplicaSet":
+    #     pass
 
     @property
     def config_db(self) -> str:
@@ -668,12 +722,14 @@ class ShardedCluster(Deployment):
     mongos: List[Mongos]
     csrs: ConfigServerReplicaSet = None
     port: int = 27017
+    type_str: str = "sharded-cluster"
 
     def __init__(self, version: str = None, port: int = 27017, name: str = None,
                  group_name: str = None, csrs: ConfigServerReplicaSet = None,
                  status: Status = Status.STAGED, image: str = "mongo:latest",
                  network_name: str = "mongo_network", mongos_count: int = 1,
-                 config_servers: int = 1, shard_count: int = 2, shard_size: int = 3):
+                 config_servers: int = 1, shard_count: int = 2, shard_size: int = 3,
+                 mongos: List[Mongos] = None):
         super().__init__(name=name, version=version, status=status,
                          network_name=network_name, image=image)
         self.port = port
@@ -683,14 +739,46 @@ class ShardedCluster(Deployment):
         self.config_servers = config_servers
         self.shard_count = shard_count
         self.shard_size = shard_size
+        self.mongos = mongos
 
     @staticmethod
-    def from_container(container: Container) -> "Deployment":
-        pass
+    def from_container_group(containers: List[Container]) -> "ShardedCluster":
+        name = containers[0].labels.get("tomodo-group")
+        group_name = name
 
-    @property
-    def type_str(self) -> str:
-        return "sharded-cluster"
+        version = get_version_from_container(containers[0])
+        csrs_containers: List[Container] = list(filter(lambda c: c.labels.get("tomodo-role") == "cfg-svr", containers))
+        mongos_containers: List[Container] = list(filter(lambda c: c.labels.get("tomodo-role") == "mongos", containers))
+        shard_count = int(mongos_containers[0].labels.get("tomodo-shard-count"))
+        shards: List[Shard] = []
+        for shard_id in range(shard_count):
+            label_prefix = f"{name}-sh-{shard_id}-"
+            shard_containers = list(
+                filter(
+                    lambda c: c.labels.get("tomodo-name", "").startswith(label_prefix),
+                    containers
+                )
+            )
+            shards.append(Shard.from_container_group(shard_containers))
+        csrs: ConfigServerReplicaSet = ConfigServerReplicaSet.from_container_group(csrs_containers)
+        mongos: List[Mongos] = [Mongos.from_container(c) for c in mongos_containers]
+
+        sc = ShardedCluster(
+            name=group_name,
+            group_name=group_name,
+            mongos=mongos,
+            port=csrs.members[0].port,
+            version=version,
+            status=Status.from_group([m.status for m in [
+                *csrs.members,
+                *mongos,
+                *[sm for shard in shards for sm in shard.members]
+            ]])
+        )
+        sc.csrs = csrs
+        sc.shards = shards
+
+        return sc
 
     def create(self) -> "ShardedCluster":
         logger.info("This action will provision a MongoDB sharded cluster with %d shards (%d replicas each)",
@@ -729,7 +817,8 @@ class ShardedCluster(Deployment):
                 name=f"{self.name}-sh-{i}",
                 port=mongos_end_port + (i * self.shard_size) + 1,
                 size=self.shard_size,
-                shard_id=str(i)
+                shard_id=str(i),
+                group_name=self.name,
             ).create() for i in range(self.shard_count)
         ]
         shard_init_commands = []
@@ -743,10 +832,19 @@ class ShardedCluster(Deployment):
         return self
 
     def __str__(self) -> str:
-        return ""
+        """
+        :return: A Markdown table row representing the instance
+        """
+        first_port = self.csrs.members[0].port
+        last_port = self.shards[-1].members[-1].port
+        port_range: str = f"{first_port}-{last_port}"
+        container_count = len(self.csrs.members) + len(self.mongos) + (len(self.shards[0].members) * len(self.shards))
+        data = [self.name, "Sharded Cluster", self.status.name, str(container_count), self.version, port_range]
+        return f"|{'|'.join(data)}|"
 
 
 class Atlas(Mongod):
+    type_str: str = "atlas-deployment"
 
     def __init__(self, version: str = None, network_name: str = "mongo_network",
                  port: int = 27017, name: str = None, group_name: str = None, container: Container = None,
@@ -781,23 +879,16 @@ class Atlas(Mongod):
     def wait_for_mongod_readiness(self):
         wait_for_atlas_deployment_readiness(atlas=self)
 
-    @property
-    def type_str(self) -> str:
-        return "atlas-deployment"
-
     def __str__(self) -> str:
         return ""
 
 
 class OpsManager(Deployment):
+    type_str: str = "ops-manager"
 
     @staticmethod
     def from_container(container: Container) -> "Deployment":
         pass
-
-    @property
-    def type_str(self) -> str:
-        return "ops-manager"
 
     def create(self):
         pass
@@ -807,14 +898,11 @@ class OpsManager(Deployment):
 
 
 class OpsManagerDeploymentServer(Deployment):
+    type_str: str = "ops-manager-deployment-server"
 
     @staticmethod
     def from_container(container: Container) -> "Deployment":
         pass
-
-    @property
-    def type_str(self) -> str:
-        return "ops-manager-deployment-server"
 
     def create(self):
         pass
@@ -826,7 +914,13 @@ class OpsManagerDeploymentServer(Deployment):
 if __name__ == "__main__":
     # mongod = Standalone(name="my-mongo", port=27017, network_name="my-network")
     # mongod.create()
-    # sc = ShardedCluster(shard_count=1, shard_size=3, config_servers=3, mongos_count=3)
+
+    # replica_set = ReplicaSet(port=1000).create()
+    #
+    # sc = ShardedCluster(shard_count=2, shard_size=3, config_servers=3, mongos_count=2)
     # sc.create()
-    atlasasdf = Atlas(port=27000)
-    atlasasdf.create()
+    # atlasasdf = Atlas(port=27000)
+    # atlasasdf.create()
+
+    depl = Deployment.get("quaint-hoverfly")
+    print(str(depl))
