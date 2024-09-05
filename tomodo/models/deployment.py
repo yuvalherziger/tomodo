@@ -27,6 +27,9 @@ logger = logging.getLogger("rich")
 DOCKER_ENDPOINT_CONFIG_VER = "1.43"
 
 
+# TODO: implement check_and_pull_image()
+
+
 class Status(Enum):
     STAGED = 0
     CREATED = 10
@@ -138,10 +141,11 @@ def create_mongod_container(mongod: "Mongod", image: str, port: int, name: str, 
         "tomodo-arbiter": str(int(arbiter)),
         "tomodo-ephemeral": str(int(ephemeral))
     }
+    ports = {f"{port}/tcp": port}
 
     container = _create_docker_container(
         name=name, image=image, labels=labels, mounts=mounts,
-        environment=environment, port=port, command=command,
+        environment=environment, ports=ports, command=command,
         network=network
     )
 
@@ -170,10 +174,11 @@ def create_atlas_container(image: str, port: int, name: str, network: Network,
         "tomodo-shard-count": "0",
         "tomodo-ephemeral": "1"
     }
+    ports = {"27017/tcp": port}
     return _create_docker_container(
         name=name, image=image, labels=labels, mounts=[],
-        environment=environment, port=port, command=None,
-        network=network
+        environment=environment, ports=ports, command=None,
+        network=network, privileged=True
     )
 
 
@@ -195,9 +200,10 @@ def create_mongos_container(image: str, port: int, name: str, group_name: str,
         "tomodo-type": "Sharded Cluster",
         "tomodo-shard-count": str(shard_count or 0),
     }
+    ports = {f"{port}/tcp": port}
     return _create_docker_container(
         name=name, image=image, labels=labels, mounts=[],
-        environment=[], port=port, command=command,
+        environment=[], ports=ports, command=command,
         network=network
     )
 
@@ -219,7 +225,6 @@ def wait_for_readiness(mongod: "Mongod"):
 
 
 def wait_for_atlas_deployment_readiness(atlas: "Atlas"):
-    # TODO: doesn't work
     logger.debug("Checking the readiness of %s", atlas.name)
     client_args = {"directConnection": True}
     if atlas.username and atlas.password:
@@ -228,13 +233,13 @@ def wait_for_atlas_deployment_readiness(atlas: "Atlas"):
     res = client.admin.command("ping")
     if not int(res["ok"]) == 1:
         logger.debug("Server %s is not ready to accept connections", atlas.name)
-        print("Server %s is not ready to accept connections" % atlas.name)
         raise Exception("Server isn't ready")
     logger.info("Server %s is ready to accept connections", atlas.name)
 
 
 def _create_docker_container(name: str, image: str, labels: Dict, mounts: List[Mount], environment: List[str],
-                             port: int, command: Union[None, List[str]], network: Network) -> Container:
+                             ports: Dict, command: Union[None, List[str]], network: Network,
+                             privileged: bool = False) -> Container:
     networking_config = NetworkingConfig(
         endpoints_config={
             network.name: EndpointConfig(version=DOCKER_ENDPOINT_CONFIG_VER, aliases=[name])
@@ -243,7 +248,8 @@ def _create_docker_container(name: str, image: str, labels: Dict, mounts: List[M
     return docker.from_env().containers.run(
         image,
         detach=True,
-        ports={f"{port}/tcp": port},
+        privileged=privileged,
+        ports=ports,
         platform=f"linux/{platform.machine()}",
         network=network.id,
         hostname=name,
@@ -510,7 +516,7 @@ class Mongod(Deployment):
         """
         data = [self.name, "Standalone", self.status.name, "1", self.version or "", str(self.port),
                 self.get_start_time() or ""]
-        return f"|{'|'.join(data)}|"
+        return f"| {' | '.join(data)} |"
 
     def __dict__(self) -> Dict:
         return {}
@@ -540,8 +546,7 @@ class Mongod(Deployment):
     def stop(self):
         status = Status.from_container(self.container)
         if status == Status.RUNNING:
-            # TODO: this should be .stop(). Pausing doesn't free up memory.
-            self.container.pause()
+            self.container.stop()
             logger.info("Container %s stopped", self.container.short_id)
         else:
             logger.warning("Container %s isn't running", self.container.short_id)
@@ -553,7 +558,10 @@ class Mongod(Deployment):
 
 
 class Standalone(Mongod):
-    pass
+
+    @property
+    def hostname(self) -> str:
+        return f"mongodb://{self.name}:{self.port}/?directConnection=true"
 
 
 class Mongos(Mongod):
@@ -694,7 +702,7 @@ class ReplicaSet(Deployment):
         start_time = self.members[0].get_start_time() or ""
         data = [self.name, "Replica Set", self.status.name, str(len(self.members)), self.version, port_range,
                 start_time]
-        return f"|{'|'.join(data)}|"
+        return f"| {' | '.join(data)} |"
 
     def delete(self):
         for member in self.members:
@@ -707,6 +715,11 @@ class ReplicaSet(Deployment):
     def start(self):
         for member in self.members:
             member.start()
+
+    @property
+    def hostname(self) -> str:
+        hosts = ",".join([f"{m.name}:{m.port}" for m in self.members])
+        return f"mongodb://{hosts}/?replicaSet={self.name}"
 
 
 class ConfigServer(Replica):
@@ -902,7 +915,7 @@ class ShardedCluster(Deployment):
         container_count = len(self.csrs.members) + len(self.mongos) + (len(self.shards[0].members) * len(self.shards))
         data = [self.name, "Sharded Cluster", self.status.name, str(container_count), self.version, port_range,
                 start_time]
-        return f"|{'|'.join(data)}|"
+        return f"| {' | '.join(data)} |"
 
     def delete(self):
         self.csrs.delete()
@@ -967,13 +980,80 @@ class Atlas(Mongod):
 
 
 class OpsManager(Deployment):
+    image: str = "ghcr.io/yuvalherziger/tomodo-mms:main"
+    port: int = 8080
+    app_db_port: int = 20000
+    replicate_app_db: bool = False
+    app_db: Union[Standalone, ReplicaSet]
+
+    def __init__(self, version: str = None, network_name: str = "mongo_network",
+                 port: int = 27017, name: str = None, group_name: str = None, container: Container = None,
+                 status: Status = Status.STAGED,
+                 image: str = "ghcr.io/yuvalherziger/tomodo-mms:main",
+                 app_db_port: int = 20000, replicate_app_db: bool = False):
+        super().__init__(version=version, name=name, port=port, network_name=network_name, group_name=group_name,
+                         status=status, image=image)
+        self.container = container
+        self.app_db_port = app_db_port
+        self.replicate_app_db = replicate_app_db
+
+    def create(self):
+        app_db_port = self.app_db_port
+        app_db_port_range: range = range(app_db_port, app_db_port + 1)
+        app_db_class = Standalone
+        if self.replicate_app_db:
+            app_db_port_range: range = range(app_db_port, app_db_port + 3)
+            app_db_class = ReplicaSet
+
+        if not is_port_range_available(tuple(app_db_port_range)):
+            raise PortsTakenException("At least one desired App DB port is taken; exiting")
+        logger.info("Creating Ops Manager's App DB")
+        # Create the app DB based on the right constructor (standalone or RS)
+        self.app_db = app_db_class(
+            port=app_db_port,
+            name=f"{self.name}-app-db",
+            group_name=self.name
+        ).create()
+
+        logger.info("Creating Ops Manager server using the following App DB: '%s'", self.app_db.hostname)
+        labels = {
+            "source": "tomodo",
+            "tomodo-name": self.name,
+            "tomodo-group": self.name,
+            "tomodo-parent": self.name,
+            "tomodo-port": str(self.port),
+            "tomodo-network": self.network_name,
+            "tomodo-role": "ops-manager",
+            "tomodo-type": "ops-manager"
+        }
+        self.container = _create_docker_container(
+            name=self.name,
+            image=self.image,
+            labels=labels,
+            mounts=[],
+            environment=[
+                f"APPDB_HOST={self.app_db.hostname}",
+                f"MMS_PORT={self.port}"
+            ],
+            ports={f"{self.port}/tcp": self.port},
+            network=get_network(self.network_name),
+            command=None
+        )
+        return self
+
+    def start(self):
+        pass
+
+    def stop(self):
+        pass
+
+    def delete(self):
+        pass
+
     type_str: str = "ops-manager"
 
     @staticmethod
     def from_container(container: Container) -> "Deployment":
-        pass
-
-    def create(self):
         pass
 
     def __str__(self) -> str:
@@ -994,6 +1074,17 @@ class OpsManagerDeploymentServer(Deployment):
         return ""
 
 
+def get_markdown_table(data) -> str:
+    headers = ["Name", "Type", "Status", "Containers", "Version", "Port(s)", "Started"]
+    rows = [
+        "| " + " | ".join(headers) + " |",
+        "| " + " | ".join(["------" for _ in range(len(headers))]) + " |",
+    ]
+    for datum in data:
+        rows.append(datum)
+    return "\n".join(rows)
+
+
 if __name__ == "__main__":
     # sa = Standalone(port=1000).create()
     # rs = ReplicaSet(port=2000).create()
@@ -1001,9 +1092,13 @@ if __name__ == "__main__":
     # print(str(Deployment.get(sa.name)))
     # print(str(Deployment.get(rs.name)))
     # print(str(Deployment.get(sc.name)))
-    all_deployments = Deployment.list()
-    # print(len(all_deployments))
-    for dep in all_deployments:
-        print(str(dep))
-
-    # sc.delete()
+    at = Atlas(port=20000, username="foo", password="bar")
+    at.create()
+    # TODO: this is how all deps will be printed:
+    # headers = ["Name", "Type", "Status", "Containers", "Version", "Port(s)", "Started"]
+    # all_deployments = Deployment.list()
+    # data = []
+    # for dep in all_deployments:
+    #     data.append(str(dep))
+    #
+    # Console().print(Markdown((get_markdown_table(data))))
