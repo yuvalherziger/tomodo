@@ -4,6 +4,7 @@ import logging
 import os
 import platform
 import secrets
+import shutil
 from abc import ABC, abstractmethod
 from enum import Enum
 from typing import List, Dict, Union
@@ -19,7 +20,8 @@ from unique_names_generator import get_random_name
 from unique_names_generator.data import ADJECTIVES, ANIMALS
 
 from tomodo.common.errors import InvalidDeploymentType, PortsTakenException, InvalidShellException
-from tomodo.common.util import get_os, is_port_range_available, with_retry, clean_up_mongo_output
+from tomodo.common.util import get_os, is_port_range_available, with_retry, clean_up_mongo_output, \
+    get_local_time_from_string
 
 logger = logging.getLogger("rich")
 DOCKER_ENDPOINT_CONFIG_VER = "1.43"
@@ -354,14 +356,17 @@ class Deployment(ABC):
     def create(self):
         raise NotImplementedError
 
+    @abstractmethod
     def start(self):
-        pass
+        raise NotImplementedError
 
+    @abstractmethod
     def stop(self):
-        pass
+        raise NotImplementedError
 
-    def remove(self):
-        pass
+    @abstractmethod
+    def delete(self):
+        raise NotImplementedError
 
     @staticmethod
     def get(name: str) -> "Deployment":
@@ -373,30 +378,30 @@ class Deployment(ABC):
         return Deployment.from_container_group(sored_group)
 
     @staticmethod
-    def list(include_stopped: bool = False) -> List["Deployment"]:
+    def list() -> List["Deployment"]:
         containers: List[Container] = docker.from_env().containers.list(
-            filters={"label": "source=tomodo"}, all=include_stopped
+            filters={"label": "source=tomodo"}, all=True
         )
 
         sorted_groups = group_containers(containers)
-        return [Deployment.from_container_group(containers) for containers in sorted_groups.items()]
+        return [Deployment.from_container_group(sorted_groups[name]) for name in sorted_groups.keys()]
 
     @staticmethod
     def from_container_group(containers: List[Container]) -> "Deployment":
         container = containers[0]
         deployment_type = container.labels.get("tomodo-type")
         if deployment_type == Standalone.type_str:
-            return Standalone.from_container(container)
+            return Standalone.from_container_group([container])
         if deployment_type == ReplicaSet.type_str:
             return ReplicaSet.from_container_group(containers)
         if deployment_type == ShardedCluster.type_str:
             return ShardedCluster.from_container_group(containers)
         if deployment_type == Atlas.type_str:
-            return Atlas.from_container(container)
+            return Atlas.from_container_group([container])
         if deployment_type == OpsManager.type_str:
-            return OpsManager.from_container(container)
+            return OpsManager.from_container_group([container])
         if deployment_type == OpsManagerDeploymentServer.type_str:
-            return OpsManagerDeploymentServer.from_container(container)
+            return OpsManagerDeploymentServer.from_container_group([container])
         raise InvalidDeploymentType
 
     @property
@@ -450,6 +455,10 @@ class Mongod(Deployment):
     def is_auth_enabled(self) -> bool:
         return self.username is not None and self.password is not None
 
+    @classmethod
+    def from_container_group(cls, containers: List[Container]) -> "Mongod":
+        return cls.from_container(containers[0])
+
     @staticmethod
     def from_container(container: Container) -> "Mongod":
         labels = container.labels
@@ -499,11 +508,48 @@ class Mongod(Deployment):
         """
         :return: A Markdown table row representing the instance
         """
-        data = [self.name, "Standalone", self.status.value, "1", self.version, str(self.port)]
+        data = [self.name, "Standalone", self.status.name, "1", self.version or "", str(self.port),
+                self.get_start_time() or ""]
         return f"|{'|'.join(data)}|"
 
     def __dict__(self) -> Dict:
         return {}
+
+    def delete(self) -> None:
+        self.container.remove(force=True)
+        if self.host_data_dir and self.host_data_dir.strip() not in ["", "/"]:
+            logger.info("The following data directory will be deleted: '%s'", self.host_data_dir)
+            if os.path.exists(self.host_data_dir):
+                try:
+                    shutil.rmtree(self.host_data_dir)
+                    logger.info("Directory '%s' has been successfully deleted", self.host_data_dir)
+                except Exception as e:
+                    logger.error("An error occurred while trying to remove '%s'; You can delete the folder manually",
+                                 self.host_data_dir)
+            else:
+                logger.warning("Directory '%s' does not exist", self.host_data_dir)
+
+    def start(self):
+        status = Status.from_container(self.container)
+        if status != Status.RUNNING:
+            self.container.start()
+            logger.info("Container %s is starting up", self.container.short_id)
+        else:
+            logger.warning("Container %s is already running", self.container.short_id)
+
+    def stop(self):
+        status = Status.from_container(self.container)
+        if status == Status.RUNNING:
+            # TODO: this should be .stop(). Pausing doesn't free up memory.
+            self.container.pause()
+            logger.info("Container %s stopped", self.container.short_id)
+        else:
+            logger.warning("Container %s isn't running", self.container.short_id)
+
+    def get_start_time(self):
+        return get_local_time_from_string(
+            self.container.attrs.get("State", {}).get("StartedAt", "")
+        ).strftime("%Y-%m-%d %H:%M:%S")
 
 
 class Standalone(Mongod):
@@ -645,8 +691,22 @@ class ReplicaSet(Deployment):
         :return: A Markdown table row representing the instance
         """
         port_range: str = f"{self.members[0].port}-{self.members[-1].port}"
-        data = [self.name, "Replica Set", self.status.name, str(len(self.members)), self.version, port_range]
+        start_time = self.members[0].get_start_time() or ""
+        data = [self.name, "Replica Set", self.status.name, str(len(self.members)), self.version, port_range,
+                start_time]
         return f"|{'|'.join(data)}|"
+
+    def delete(self):
+        for member in self.members:
+            member.delete()
+
+    def stop(self):
+        for member in self.members:
+            member.stop()
+
+    def start(self):
+        for member in self.members:
+            member.start()
 
 
 class ConfigServer(Replica):
@@ -838,9 +898,32 @@ class ShardedCluster(Deployment):
         first_port = self.csrs.members[0].port
         last_port = self.shards[-1].members[-1].port
         port_range: str = f"{first_port}-{last_port}"
+        start_time = self.csrs.members[0].get_start_time() or ""
         container_count = len(self.csrs.members) + len(self.mongos) + (len(self.shards[0].members) * len(self.shards))
-        data = [self.name, "Sharded Cluster", self.status.name, str(container_count), self.version, port_range]
+        data = [self.name, "Sharded Cluster", self.status.name, str(container_count), self.version, port_range,
+                start_time]
         return f"|{'|'.join(data)}|"
+
+    def delete(self):
+        self.csrs.delete()
+        for mongos in self.mongos:
+            mongos.delete()
+        for shard in self.shards:
+            shard.delete()
+
+    def start(self):
+        self.csrs.start()
+        for mongos in self.mongos:
+            mongos.start()
+        for shard in self.shards:
+            shard.start()
+
+    def stop(self):
+        self.csrs.stop()
+        for mongos in self.mongos:
+            mongos.stop()
+        for shard in self.shards:
+            shard.stop()
 
 
 class Atlas(Mongod):
@@ -912,15 +995,15 @@ class OpsManagerDeploymentServer(Deployment):
 
 
 if __name__ == "__main__":
-    # mongod = Standalone(name="my-mongo", port=27017, network_name="my-network")
-    # mongod.create()
+    # sa = Standalone(port=1000).create()
+    # rs = ReplicaSet(port=2000).create()
+    # sc = ShardedCluster(port=3000).create()
+    # print(str(Deployment.get(sa.name)))
+    # print(str(Deployment.get(rs.name)))
+    # print(str(Deployment.get(sc.name)))
+    all_deployments = Deployment.list()
+    # print(len(all_deployments))
+    for dep in all_deployments:
+        print(str(dep))
 
-    # replica_set = ReplicaSet(port=1000).create()
-    #
-    # sc = ShardedCluster(shard_count=2, shard_size=3, config_servers=3, mongos_count=2)
-    # sc.create()
-    # atlasasdf = Atlas(port=27000)
-    # atlasasdf.create()
-
-    depl = Deployment.get("quaint-hoverfly")
-    print(str(depl))
+    # sc.delete()

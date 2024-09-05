@@ -1,3 +1,4 @@
+import datetime
 import functools
 import inspect
 import io
@@ -200,3 +201,23 @@ def get_os():
         return "Linux"
     else:
         return "Unknown OS"
+
+
+def get_local_time_from_string(date_str: str) -> datetime:
+    date_str_trimmed = date_str[:23] + '+00:00'
+
+    dt_utc = datetime.datetime.fromisoformat(date_str_trimmed)
+
+    now_local = datetime.datetime.now()
+
+    # Get the local offset in minutes from UTC, considering DST
+    local_offset = datetime.datetime.now(datetime.timezone.utc).astimezone().utcoffset()
+    if local_offset is None:
+        local_offset = datetime.timedelta()  # Default to no offset if unable to retrieve
+
+    # Convert the offset to a timedelta
+    local_offset = datetime.timedelta(hours=local_offset.total_seconds() / 3600)
+
+    # Calculate local time by adding the local offset
+    dt_local = dt_utc + local_offset
+    return dt_local
