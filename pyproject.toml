@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "tomodo"
-version = "1.4.2"
+version = "1.4.3"
 description = "A CLI for managing MongoDB deployments on Docker"
 authors = ["Yuval Herziger <yuvalhrz@gmail.com>"]
 readme = "README.md"
