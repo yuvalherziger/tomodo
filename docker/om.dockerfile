@@ -4,7 +4,7 @@
 FROM ubuntu:22.04
 
 ARG JDK_ARM64_BINARY=https://download.oracle.com/java/17/archive/jdk-17.0.11_linux-aarch64_bin.tar.gz
-ARG VERSION=7.0.10
+ARG VERSION=8.0.11
 
 ENV VERSION=${VERSION}
 
