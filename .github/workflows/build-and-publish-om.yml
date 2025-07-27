@@ -17,7 +17,7 @@ jobs:
   build-and-push-om-image:
     strategy:
       matrix:
-        om-version: [ "7.0.10" ]
+        om-version: [ "8.0.11" ]
     runs-on: ubuntu-latest
     permissions:
       contents: read
